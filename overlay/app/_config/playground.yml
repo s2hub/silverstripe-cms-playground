@@ -17,3 +17,9 @@ After: '#assetsimage-imagick'
 SilverStripe\Core\Injector\Injector:
   InterventionImageDriver:
     class: 'Intervention\Image\Drivers\Gd\Driver'
+---
+Name: playground-cms
+---
+SilverStripe\Admin\LeftAndMain:
+  extensions:
+    - PlaygroundLeftAndMainExtension

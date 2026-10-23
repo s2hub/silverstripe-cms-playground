@@ -50,6 +50,9 @@ Things that differ from a server:
 - oEmbed lookups (e.g. the Vimeo video on "Theme styles") are cached at build time and kept, because most oEmbed
   hosts do not allow cross-origin requests.
 - Mail is not sent (`MAILER_DSN="null://null"`).
+- The CMS loads the scripts of a PJAX response (e.g. the combined TinyMCE file) with synchronous XHRs, which Chrome
+  may send past the service worker to the web server. `overlay/app/src/PlaygroundLeftAndMainExtension.php` makes
+  them asynchronous.
 
 ## Development
 
