@@ -1,0 +1,24 @@
+{
+  "name": "silverstripe-playground",
+  "private": true,
+  "description": "Silverstripe CMS running in the browser via PHP-in-WebAssembly, comparable to WordPress Playground",
+  "license": "GPL-2.0-or-later",
+  "type": "module",
+  "scripts": {
+    "site": "node bin/build-site.mjs",
+    "bundle": "node bin/build-browser-bundle.mjs",
+    "build": "npm run site && npm run bundle && npm run web:build",
+    "web:dev": "vite --config web/vite.config.js",
+    "web:build": "vite build --config web/vite.config.js",
+    "web:preview": "vite preview --config web/vite.config.js --port 5411",
+    "wasm:serve": "node wasm/serve.mjs",
+    "wasm:sake": "node wasm/sake.mjs"
+  },
+  "devDependencies": {
+    "@php-wasm/node": "^3.1.60",
+    "@php-wasm/universal": "^3.1.60",
+    "@php-wasm/util": "^3.1.60",
+    "@php-wasm/web": "^3.1.60",
+    "vite": "^6.4.5"
+  }
+}

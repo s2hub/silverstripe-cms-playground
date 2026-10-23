@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Silverstripe Playground</title>
+    <meta name="description" content="Silverstripe CMS in your browser: PHP in WebAssembly, no server, no installation.">
+    <style>
+      :root {
+        --toolbar: #1b2a3d;
+        --toolbar-text: #f4f6f8;
+        --muted: #a9b6c6;
+        --accent: #0071c4;
+        --error: #ff8a80;
+        color-scheme: light;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+
+      body {
+        display: flex;
+        flex-direction: column;
+        background: #fff;
+        font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px 12px;
+        padding: 6px 12px;
+        background: var(--toolbar);
+        color: var(--toolbar-text);
+      }
+
+      header h1 {
+        margin: 0 8px 0 0;
+        font-size: 15px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+
+      button {
+        padding: 4px 10px;
+        border: 1px solid #3b4f68;
+        border-radius: 4px;
+        background: #26384f;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+      }
+
+      button:hover:not(:disabled) {
+        background: var(--accent);
+        border-color: var(--accent);
+      }
+
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+
+      #status {
+        flex: 1;
+        min-width: 12em;
+        color: var(--muted);
+      }
+
+      #status.error {
+        color: var(--error);
+      }
+
+      .meta {
+        color: var(--muted);
+        white-space: nowrap;
+      }
+
+      #credentials {
+        font-family: ui-monospace, monospace;
+        color: var(--toolbar-text);
+      }
+
+      iframe {
+        flex: 1;
+        width: 100%;
+        border: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Silverstripe Playground</h1>
+      <button id="open-site" type="button" disabled>Site</button>
+      <button id="open-admin" type="button" disabled>CMS</button>
+      <button id="reset-site" type="button" disabled title="Throw this playground away and start again">Start over</button>
+      <span id="status" role="status">Loading</span>
+      <span class="meta">Admin: <span id="credentials">…</span></span>
+      <span class="meta" id="info"></span>
+    </header>
+    <iframe id="site" title="Silverstripe site"></iframe>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

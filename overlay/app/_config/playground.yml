@@ -1,0 +1,19 @@
+---
+Name: playground
+After: '#corecache'
+---
+# The build fetches the demo's embeds (oEmbed, e.g. Vimeo) once and keeps them: in the browser, most oEmbed
+# endpoints cannot be reached (no CORS headers).
+SilverStripe\Core\Injector\Injector:
+  Psr\SimpleCache\CacheInterface.EmbedShortcodeProvider:
+    constructor:
+      defaultLifetime: 0
+---
+Name: playground-images
+After: '#assetsimage-imagick'
+---
+# The site is built with @php-wasm/node, which has Imagick; the browser's @php-wasm/web has GD only. The config
+# manifest is built in Node, so the driver is chosen here and not by "extensionloaded: imagick".
+SilverStripe\Core\Injector\Injector:
+  InterventionImageDriver:
+    class: 'Intervention\Image\Drivers\Gd\Driver'
