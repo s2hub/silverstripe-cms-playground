@@ -78,7 +78,7 @@ cpSync(resolve(out, '.reset/assets_reset'), resolve(out, 'public/assets'), { rec
 await inWasm('sake db:build', runSake, ['db:build']);
 
 // Visits every page once: fills the caches in silverstripe-cache/, above all the oEmbed results (see
-// overlay/app/_config/playground.yml), which the browser could not fetch.
+// overlay/playground/_config/playground.yml), which the browser could not fetch.
 console.log('$ Visiting the pages (WebAssembly)');
 const server = await serve({ site: out, port: 8799 });
 const seen = new Set(['/']);

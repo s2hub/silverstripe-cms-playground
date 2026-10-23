@@ -16,6 +16,7 @@ shows it.
 | Button | What it does |
 |---|---|
 | **Site** / **CMS** | Show the front end or the CMS. |
+| **Code** | Edit the project's code in `app/` next to the site (see below). |
 | **New** | Start a new playground. |
 | **Start over** | Throw this playground away and start again from the same link. |
 | **Save…** | Keep this playground in your browser under a name. From then on, changes are saved as you work. |
@@ -30,6 +31,16 @@ shows it.
   browser restart. A saved site keeps its admin password.
 - A saved site stays in this browser only (in its private storage for this website, OPFS); use **Export** to move it
   elsewhere. It can be open in one tab at a time.
+
+**Building something.** **Code** opens an editor (Monaco, the editor of VS Code) with the files in `app/`:
+
+1. **New file** → `app/src/EventPage.php` starts as a page type with a `Subtitle` field.
+2. **dev/build** creates its database tables (and flushes the caches); the output shows below the editor.
+3. In the CMS, **Add new Page** now offers *Event Page*.
+4. **New file** → `app/templates/Layout/EventPage.ss` starts as a layout that shows the subtitle.
+
+**Save** (Ctrl+S) writes the file, flushes Silverstripe's caches and reloads the site, so changed classes,
+templates and config show at once; new database fields need **dev/build**. In a saved site, the code is saved too.
 
 | Parameter | Example | What it does |
 |---|---|---|
@@ -68,13 +79,14 @@ Things that differ from a server:
 
 - `ext-intl` is required by Silverstripe 6 and loaded on request (`withIntl`), which adds the ICU data (31 MB) to the
   download.
-- The browser's PHP has GD but no Imagick; the image driver is set to GD in `overlay/app/_config/playground.yml`.
+- The browser's PHP has GD but no Imagick; the image driver is set to GD in the playground's own module
+  (`overlay/playground/`, kept out of `app/` so the code editor shows the demo's code only).
 - oEmbed lookups (e.g. the Vimeo video on "Theme styles") are cached at build time and kept, because most oEmbed
   hosts do not allow cross-origin requests.
 - Mail is not sent (`MAILER_DSN="null://null"`).
 - The CMS loads the scripts of a PJAX response (e.g. the combined TinyMCE file) with synchronous XHRs, which Chrome
-  may send past the service worker to the web server. `overlay/app/src/PlaygroundLeftAndMainExtension.php` makes
-  them asynchronous.
+  may send past the service worker to the web server. `PlaygroundLeftAndMainExtension` makes them asynchronous.
+- `dev/build` does not VACUUM the SQLite database: in the browser it runs while the session's queries are open.
 
 ## Development
 

@@ -46,7 +46,7 @@ const channel = new BroadcastChannel('silverstripe-playground');
  *          that were renamed (moved with all their files)
  * dirty:   whether files changed since the last snapshot
  *
- * @type {{php: PHP, handler: PHPRequestHandler, manifest: object, password: string, site: string|null,
+ * @type {{php: PHP, siteUrl: string, handler: PHPRequestHandler, manifest: object, password: string, site: string|null,
  *   base: {id: string|null, bytes: Uint8Array|null}, changes: {paths: Set<string>, trees: Set<string>}, dirty: boolean}}
  */
 let state = null;
@@ -65,7 +65,7 @@ function serialized(task) {
   return run;
 }
 
-const actions = { boot, save, exportSite, flush };
+const actions = { boot, save, exportSite, flush, listFiles, readFile, writeFile, deleteFile, flushCaches, devBuild };
 
 self.onmessage = async ({ data }) => {
   const action = actions[data?.type];
@@ -176,6 +176,7 @@ async function boot({ base, scope, site = null, zip = null, login = true }) {
 
   state = {
     php,
+    siteUrl,
     handler: createHandler(),
     manifest,
     password,
@@ -188,6 +189,13 @@ async function boot({ base, scope, site = null, zip = null, login = true }) {
   if (meta) {
     state.site = site;
     await writeMeta(site, { ...meta, opened: new Date().toISOString() });
+  }
+
+  // The caches come from the base, not from the snapshot: after changes to the code they must be built again.
+  if ([...changes.paths].some((path) => EDITABLE.some((folder) => path === folder || path.startsWith(`${folder}/`)))) {
+    progress('Building the caches for the changed code');
+    await state.handler.request({ url: `${siteUrl}/?flush=1` });
+    lap('flush');
   }
 
   if (login) {
@@ -504,6 +512,127 @@ function siteComment(php) {
   } catch {
     return null;
   }
+}
+
+/** The folders the code editor may change (see code-editor.js). */
+const EDITABLE = ['app'];
+
+/**
+ * A path below the project root that the code editor may change: inside an editable folder, without "." or ".."
+ * segments.
+ */
+function editablePath(path) {
+  const segments = String(path).split('/').filter(Boolean);
+
+  if (!EDITABLE.includes(segments[0]) || segments.some((segment) => segment === '.' || segment === '..')) {
+    throw new Error(`Only files in ${EDITABLE.map((folder) => `${folder}/`).join(', ')} can be edited`);
+  }
+
+  return `${PROJECT_ROOT}/${segments.join('/')}`;
+}
+
+function running() {
+  if (!state) {
+    throw new Error('The playground is not running');
+  }
+
+  return state.php;
+}
+
+/**
+ * The files and folders in the editable folders: [{ path, type: 'file' | 'dir' }], sorted.
+ */
+async function listFiles() {
+  const php = running();
+  const entries = [];
+  const walk = (relative) => {
+    for (const name of php.listFiles(`${PROJECT_ROOT}/${relative}`).sort()) {
+      const path = `${relative}/${name}`;
+      const isDir = php.isDir(`${PROJECT_ROOT}/${path}`);
+
+      entries.push({ path, type: isDir ? 'dir' : 'file' });
+
+      if (isDir) {
+        walk(path);
+      }
+    }
+  };
+
+  await serialized(() => EDITABLE.forEach((folder) => php.isDir(`${PROJECT_ROOT}/${folder}`) && walk(folder)));
+
+  return { value: entries };
+}
+
+async function readFile({ path }) {
+  const php = running();
+
+  return { value: await serialized(() => php.readFileAsText(editablePath(path))) };
+}
+
+/**
+ * Writes a file, creating its folders. For a saved site, the change goes into the next snapshot.
+ */
+async function writeFile({ path, content }) {
+  const php = running();
+  const absolute = editablePath(path);
+
+  await serialized(() => {
+    php.mkdir(absolute.slice(0, absolute.lastIndexOf('/')));
+    php.writeFile(absolute, content);
+  });
+  scheduleSnapshot({ now: true });
+
+  return { value: null };
+}
+
+async function deleteFile({ path }) {
+  const php = running();
+  const absolute = editablePath(path);
+
+  await serialized(() => (php.isDir(absolute) ? php.rmdir(absolute, { recursive: true }) : php.unlink(absolute)));
+  scheduleSnapshot({ now: true });
+
+  return { value: null };
+}
+
+/**
+ * Rebuilds Silverstripe's manifests and caches (?flush=1), so new classes, templates and config take effect.
+ */
+async function flushCaches() {
+  running();
+
+  const response = await serialized(() => state.handler.request({ url: `${state.siteUrl}/?flush=1` }));
+
+  scheduleSnapshot();
+
+  return { value: { status: response.httpStatusCode } };
+}
+
+/**
+ * Runs dev/build with flush, logged in as the admin: updates the database to the code and rebuilds the manifests and
+ * caches. Returns the output as text.
+ */
+async function devBuild() {
+  running();
+
+  const response = await serialized(() => state.handler.request({ url: `${state.siteUrl}/dev/build?flush=1` }));
+  const text = response.text
+    .replace(/<(script|style)[\s\S]*?<\/\1>/gi, '')
+    .replace(/<\/(li|p|div|h\d|tr)>|<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;/g, "'")
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n\s*\n+/g, '\n')
+    .trim();
+
+  scheduleSnapshot({ now: true });
+
+  return { value: { status: response.httpStatusCode, text } };
 }
 
 /**

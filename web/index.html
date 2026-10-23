@@ -12,7 +12,24 @@
         --muted: #a9b6c6;
         --accent: #0071c4;
         --error: #ff8a80;
+        --panel: #fff;
+        --panel-text: #1b2a3d;
+        --panel-muted: #5c6b7c;
+        --panel-border: #dde3ea;
+        --panel-hover: #f1f4f8;
+        --panel-active: #dbe8f6;
         color-scheme: light;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --panel: #1e1e1e;
+          --panel-text: #d4d4d4;
+          --panel-muted: #9aa5b1;
+          --panel-border: #333;
+          --panel-hover: #252a30;
+          --panel-active: #264f78;
+        }
       }
 
       * {
@@ -179,10 +196,157 @@
         color: #fff;
       }
 
+      button[aria-pressed="true"] {
+        background: var(--accent);
+        border-color: var(--accent);
+      }
+
+      #workspace {
+        display: flex;
+        flex: 1;
+        min-height: 0;
+      }
+
+      #code-panel {
+        display: flex;
+        width: 50%;
+        min-width: 0;
+        border-right: 1px solid #c9d2dc;
+        background: var(--panel);
+        color: var(--panel-text);
+      }
+
+      #code-panel[hidden] {
+        display: none;
+      }
+
+      #code-files {
+        display: flex;
+        flex-direction: column;
+        width: 13rem;
+        flex-shrink: 0;
+        border-right: 1px solid var(--panel-border);
+      }
+
+      #file-tree {
+        flex: 1;
+        overflow: auto;
+        margin: 0;
+        padding: 4px 0;
+        list-style: none;
+        font: 13px/1.6 ui-monospace, monospace;
+      }
+
+      #file-tree li {
+        overflow: hidden;
+        padding-right: 8px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      #file-tree li.dir {
+        color: var(--panel-muted);
+      }
+
+      #file-tree li.file {
+        cursor: pointer;
+      }
+
+      #file-tree li.file:hover {
+        background: var(--panel-hover);
+      }
+
+      #file-tree li.active {
+        background: var(--panel-active);
+      }
+
+      #file-tree li.dirty::after {
+        content: " •";
+      }
+
+      #code-main {
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        min-width: 0;
+      }
+
+      .code-bar {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 36px;
+        padding: 4px 8px;
+        border-bottom: 1px solid var(--panel-border);
+      }
+
+      .code-bar button {
+        background: var(--panel);
+        border-color: var(--panel-border);
+        color: var(--panel-text);
+      }
+
+      .code-bar button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+
+      #code-files .code-bar strong {
+        flex: 1;
+        font: 600 13px ui-monospace, monospace;
+      }
+
+      #code-path {
+        flex: 1;
+        overflow: hidden;
+        font: 13px ui-monospace, monospace;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      #code-editor {
+        flex: 1;
+        min-height: 0;
+      }
+
+      #code-output {
+        max-height: 35%;
+        overflow: auto;
+        margin: 0;
+        padding: 8px;
+        border-top: 1px solid var(--panel-border);
+        background: var(--panel-hover);
+        font: 12px/1.5 ui-monospace, monospace;
+        white-space: pre-wrap;
+      }
+
+      #code-output.error {
+        color: #c01c28;
+      }
+
       iframe {
         flex: 1;
+        min-width: 0;
         width: 100%;
         border: 0;
+      }
+
+      @media (max-width: 800px) {
+        #workspace {
+          flex-direction: column;
+        }
+
+        #code-panel {
+          width: 100%;
+          height: 55%;
+          border-right: 0;
+          border-bottom: 1px solid #c9d2dc;
+        }
+
+        #code-files {
+          width: 9rem;
+        }
       }
     </style>
   </head>
@@ -191,6 +355,7 @@
       <h1>Silverstripe Playground</h1>
       <button id="open-site" type="button" disabled>Site</button>
       <button id="open-admin" type="button" disabled>CMS</button>
+      <button id="toggle-code" type="button" disabled aria-pressed="false" title="Edit the code in app/ and run dev/build">Code</button>
       <button id="new-site" type="button" disabled title="Start a new playground">New</button>
       <button id="reset-site" type="button" disabled title="Throw this playground away and start again from the same link">Start over</button>
       <button id="save-site" type="button" disabled title="Keep this playground in your browser">Save…</button>
@@ -205,7 +370,28 @@
       <span class="meta">Admin: <span id="credentials">…</span></span>
       <span class="meta" id="info"></span>
     </header>
-    <iframe id="site" title="Silverstripe site"></iframe>
+    <main id="workspace">
+      <section id="code-panel" hidden aria-label="Code">
+        <nav id="code-files" aria-label="Files">
+          <div class="code-bar">
+            <strong>app/</strong>
+            <button id="code-new" type="button" title="Create a file in app/">New file</button>
+          </div>
+          <ul id="file-tree"></ul>
+        </nav>
+        <div id="code-main">
+          <div class="code-bar">
+            <span id="code-path">No file open</span>
+            <button id="code-save" type="button" disabled title="Save (Ctrl+S)">Save</button>
+            <button id="code-delete" type="button" disabled>Delete</button>
+            <button id="code-build" type="button" class="primary" title="Save all files and run dev/build?flush=1">dev/build</button>
+          </div>
+          <div id="code-editor"></div>
+          <pre id="code-output" hidden></pre>
+        </div>
+      </section>
+      <iframe id="site" title="Silverstripe site"></iframe>
+    </main>
     <script type="module" src="./src/main.js"></script>
   </body>
 </html>

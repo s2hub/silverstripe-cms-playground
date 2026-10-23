@@ -1,5 +1,6 @@
 // Main page of the Silverstripe Playground: registers the service worker, starts the PHP worker, shows Silverstripe
-// in an iframe and offers saving, exporting and importing playgrounds (adapted from the Joomla Playground's).
+// in an iframe and offers saving, exporting and importing playgrounds (adapted from the Joomla Playground's), and a
+// code editor for app/ (see code-editor.js).
 //
 // ?site=<slug> opens a site saved in this browser; without it, a new temporary playground starts.
 // ?url=<path> sets the page to open first (default: the CMS), ?login=no starts logged out.
@@ -13,6 +14,8 @@ const elements = {
   frame: document.querySelector('#site'),
   site: document.querySelector('#open-site'),
   admin: document.querySelector('#open-admin'),
+  code: document.querySelector('#toggle-code'),
+  codePanel: document.querySelector('#code-panel'),
   newSite: document.querySelector('#new-site'),
   reset: document.querySelector('#reset-site'),
   save: document.querySelector('#save-site'),
@@ -27,6 +30,9 @@ const elements = {
 
 let worker = null;
 let playground = null;
+
+/** The code editor, once the Code panel was opened (see toggleCode()). */
+let codeEditor = null;
 const pending = new Map();
 let nextId = 1;
 
@@ -36,7 +42,7 @@ function setStatus(message, isError = false) {
 }
 
 function setBusy(busy) {
-  for (const button of [elements.site, elements.admin, elements.newSite, elements.exportSite, elements.importSite]) {
+  for (const button of [elements.site, elements.admin, elements.code, elements.newSite, elements.exportSite, elements.importSite]) {
     button.disabled = busy;
   }
 
@@ -91,6 +97,7 @@ async function boot({ landingPage, ...options } = {}, transfer = []) {
 
   playground = await call('boot', { base: base.href, scope, ...options }, transfer);
   show(landingPage);
+  await codeEditor?.reset();
 
   return playground;
 }
@@ -115,6 +122,31 @@ function show(path = '/admin/pages') {
 
   // For tests and debugging.
   window.silverstripePlayground = playground;
+}
+
+/**
+ * Shows or hides the Code panel. Monaco is loaded the first time it opens.
+ */
+async function toggleCode() {
+  const open = elements.codePanel.hidden;
+
+  elements.codePanel.hidden = !open;
+  elements.code.setAttribute('aria-pressed', String(open));
+
+  if (open && !codeEditor) {
+    setStatus('Loading the code editor');
+
+    const { createCodeEditor } = await import('./code-editor.js');
+
+    codeEditor = createCodeEditor({
+      root: elements.codePanel,
+      call,
+      setStatus,
+      reloadSite: () => elements.frame.contentWindow?.location.reload(),
+    });
+    await codeEditor.reset();
+    setStatus('Edit the files in app/; dev/build updates the database and caches');
+  }
 }
 
 async function saveSite() {
@@ -259,6 +291,7 @@ async function start() {
 
   elements.site.onclick = () => (elements.frame.src = `${playground.siteUrl}/`);
   elements.admin.onclick = () => (elements.frame.src = `${playground.siteUrl}/admin/`);
+  elements.code.onclick = () => toggleCode().catch((error) => setStatus(error.message, true));
   elements.newSite.onclick = () => (location.href = base.pathname);
   elements.reset.onclick = () => confirm('Throw this playground away and start again from the same link?') && location.reload();
   elements.save.onclick = saveSite;

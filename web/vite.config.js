@@ -24,6 +24,8 @@ export default defineConfig({
     target: 'es2022',
     outDir: 'dist',
     emptyOutDir: true,
+    // Monaco (code-editor.js) is one large chunk, loaded only when the Code panel opens.
+    chunkSizeWarningLimit: 3000,
   },
   server: {
     port: 5410,
