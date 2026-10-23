@@ -1,6 +1,0 @@
----
-Name: app
----
-# Same as the demo, without its Google Analytics script in the CMS.
-SilverStripe\Security\Security:
-  default_login_dest: admin/pages

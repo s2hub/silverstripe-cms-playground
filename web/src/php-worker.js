@@ -720,6 +720,9 @@ async function logIn(handler, siteUrl, password) {
     Password: password,
     SecurityID: token,
     AuthenticationMethod: 'SilverStripe\\Security\\MemberAuthenticator\\MemberAuthenticator',
+    // Where to go after logging in: the CMS. Without it, Silverstripe shows the login page again ("Welcome back"),
+    // unless the project sets Security.default_login_dest.
+    BackURL: `${new URL(siteUrl).pathname}/admin/`,
     action_doLogin: '1',
   });
   const response = await handler.request({

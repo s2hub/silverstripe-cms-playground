@@ -13,7 +13,6 @@ import { execFileSync } from 'node:child_process';
 import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { DEMO_COMMIT } from './demo.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const { values } = parseArgs({
@@ -28,7 +27,7 @@ const stage = resolve(root, 'build/bundle');
 
 /** Paths (relative to the project) left out of site.zip. */
 const SKIP = [
-  /^\.(reset|git|github)(\/|$)/,
+  /^\.(ddev|git|github)(\/|$)/,
   /^(README|LICENSE)\.md$/,
   /^vendor\/.*\/(tests|docs|\.github|client\/src|node_modules)(\/|$)/,
   /^vendor\/.*\.(md|map)$/,
@@ -84,7 +83,7 @@ const manifest = {
   silverstripe: version('silverstripe/framework'),
   cms: version('silverstripe/cms'),
   sqlite3: version('silverstripe/sqlite3'),
-  demo: DEMO_COMMIT,
+  elemental: version('dnadesign/silverstripe-elemental'),
   built: new Date().toISOString(),
 };
 

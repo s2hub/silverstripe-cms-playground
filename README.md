@@ -5,8 +5,10 @@ WebAssembly, and the site and its SQLite database live in the tab's memory. Comp
 [WordPress Playground](https://wordpress.org/playground/), whose PHP-in-WebAssembly runtime (`@php-wasm/*`) it
 uses, and modelled on the [Joomla Playground](https://github.com/HermanPeeren/joomla-playground).
 
-The site is [demo.silverstripe.org](https://github.com/silverstripe/demo.silverstripe.org) (Silverstripe CMS 6)
-with its demo content, running on [`silverstripe/sqlite3`](https://github.com/silverstripe/silverstripe-sqlite3).
+The site is [silverstripe-playground-site](https://github.com/s2hub/silverstripe-playground-site), a small
+Silverstripe CMS 6 project to learn from (content blocks, a ModelAdmin, sample content), running on
+[`silverstripe/sqlite3`](https://github.com/silverstripe/silverstripe-sqlite3). It is an ordinary project and can be
+used without the playground too.
 
 ## Using it
 
@@ -42,6 +44,10 @@ shows it.
 **Save** (Ctrl+S) writes the file, flushes Silverstripe's caches and reloads the site, so changed classes,
 templates and config show at once; new database fields need **dev/build**. In a saved site, the code is saved too.
 
+**Things to extend.** The site explains itself: its pages *How it is built* and *Try it* show where things are
+(content blocks, the **Contacts** ModelAdmin with a preview of each contact, a block of its own) and give small
+tasks, e.g. a new field for contacts or a block of your own.
+
 | Parameter | Example | What it does |
 |---|---|---|
 | `site` | `?site=my-site` | Open a site saved in this browser |
@@ -63,11 +69,11 @@ templates and config show at once; new database fields need **dev/build**. In a 
                                                          SQLite database, cookie store with the admin session
 ```
 
-- **`bin/build-site.mjs`** builds `build/site`: it fetches the demo at a pinned commit (`bin/demo.mjs`), replaces
-  DynamoDB/MySQL with SQLite, copies `overlay/` on top, installs with Composer, runs `sake db:build` in
-  WebAssembly (`@php-wasm/node`), imports the demo content from the demo's reset dump (pages, files and settings,
-  no members; `bin/import-demo-content.php`) and visits every page once to fill the caches.
-- **`bin/build-browser-bundle.mjs`** packs `build/site` as `web/public/silverstripe/site.zip` (17 MB) and copies
+- **`bin/build-site.mjs`** builds `build/site`: it fetches the site repository (`bin/site-source.mjs`), copies
+  `overlay/` on top (SQLite `.env`, the playground module), requires `silverstripe/sqlite3`, installs with Composer,
+  runs `sake db:build` and `sake tasks:seed-content` in WebAssembly (`@php-wasm/node`) and visits every page once to
+  fill the caches. `--source=../silverstripe-playground-site` builds from a local checkout instead.
+- **`bin/build-browser-bundle.mjs`** packs `build/site` as `web/public/silverstripe/site.zip` (16 MB) and copies
   the module and theme resources next to it as static files.
 - **`web/`** is the static playground (Vite). Each playground gets a random admin password and its scope URL
   (`SS_BASE_URL`) through a PHP file that runs before every request (`web/src/prepend.js`).
@@ -80,9 +86,10 @@ Things that differ from a server:
 - `ext-intl` is required by Silverstripe 6 and loaded on request (`withIntl`), which adds the ICU data (31 MB) to the
   download.
 - The browser's PHP has GD but no Imagick; the image driver is set to GD in the playground's own module
-  (`overlay/playground/`, kept out of `app/` so the code editor shows the demo's code only).
-- oEmbed lookups (e.g. the Vimeo video on "Theme styles") are cached at build time and kept, because most oEmbed
-  hosts do not allow cross-origin requests.
+  (`overlay/playground/`, kept out of `app/` so the code editor shows the site's code only).
+- oEmbed lookups (embedded videos) are cached at build time and kept, because most oEmbed hosts do not allow
+  cross-origin requests.
+- The playground logs in with a `BackURL` to the CMS, so the site needs no `Security.default_login_dest`.
 - Mail is not sent (`MAILER_DSN="null://null"`).
 - The CMS loads the scripts of a PJAX response (e.g. the combined TinyMCE file) with synchronous XHRs, which Chrome
   may send past the service worker to the web server. `PlaygroundLeftAndMainExtension` makes them asynchronous.
@@ -95,6 +102,7 @@ Needs Node 24 (22 works), Composer and git. PHP on the host is only used by Comp
 ```bash
 npm install
 npm run build          # site + bundle + web app in web/dist
+npm run site -- --source=../silverstripe-playground-site   # the site from a local checkout
 npm run web:preview    # http://localhost:5411/
 ```
 

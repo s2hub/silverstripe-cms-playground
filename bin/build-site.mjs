@@ -1,26 +1,30 @@
-// Builds the playground's Silverstripe site in build/site from demo.silverstripe.org.
+// Builds the playground's Silverstripe site in build/site from the site repository (see site-source.mjs).
 //
-// 1. Fetches the demo project at a pinned commit (nothing of it is kept in this repository).
-// 2. Swaps its MySQL/DynamoDB setup for SQLite: removes silverstripe/dynamodb and the demo reset task (which needs
-//    symfony/process, mysql and rsync), requires silverstripe/sqlite3.
-// 3. Copies overlay/ on top (.env, no Google Analytics).
-// 4. Installs with Composer; module resources are copied into public/_resources (no symlinks).
-// 5. Builds the database with PHP in WebAssembly, at the same path the browser uses, so the manifest cache in
-//    silverstripe-cache/ is valid there too.
-// 6. Imports the demo's content from its reset dump (.reset/), without members.
-// 7. Visits every page, to fill the caches.
+// 1. Fetches the site at its ref (nothing of it is kept in this repository), or copies a local checkout (--source).
+// 2. Copies overlay/ on top: .env for SQLite, and the playground module (settings for PHP in WebAssembly).
+// 3. Requires silverstripe/sqlite3 and installs with Composer; module resources are copied into public/_resources
+//    (no symlinks).
+// 4. Builds the database with PHP in WebAssembly, at the same path the browser uses, so the manifest cache in
+//    silverstripe-cache/ is valid there too, and creates the sample content (sake tasks:seed-content).
+// 5. Visits every page, to fill the caches.
 //
-// Usage: node bin/build-site.mjs [--out=build/site]
+// Usage: node bin/build-site.mjs [--out=build/site] [--source=<git URL or local folder>] [--ref=<branch, tag, commit>]
 
 import { execFileSync } from 'node:child_process';
-import { cpSync, mkdirSync, rmSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { cpSync, existsSync, mkdirSync, rmSync, statSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { DEMO_COMMIT, DEMO_REPOSITORY } from './demo.mjs';
-import { PROJECT_ROOT, runCli, runSake, serve } from '../wasm/silverstripe-wasm.mjs';
+import { SITE_REF, SITE_REPOSITORY } from './site-source.mjs';
+import { runSake, serve } from '../wasm/silverstripe-wasm.mjs';
 
 const root = resolve(import.meta.dirname, '..');
-const { values } = parseArgs({ options: { out: { type: 'string', default: 'build/site' } } });
+const { values } = parseArgs({
+  options: {
+    out: { type: 'string', default: 'build/site' },
+    source: { type: 'string', default: SITE_REPOSITORY },
+    ref: { type: 'string', default: SITE_REF },
+  },
+});
 const out = resolve(root, values.out);
 
 function run(command, args, options = {}) {
@@ -31,19 +35,33 @@ function run(command, args, options = {}) {
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 
-// The demo at the pinned commit, without its git history.
-run('git', ['init', '--quiet']);
-run('git', ['fetch', '--quiet', '--depth=1', DEMO_REPOSITORY, DEMO_COMMIT]);
-run('git', ['checkout', '--quiet', 'FETCH_HEAD']);
-rmSync(resolve(out, '.git'), { recursive: true, force: true });
+const localSource = existsSync(values.source) && statSync(values.source).isDirectory() ? resolve(values.source) : null;
 
-rmSync(resolve(out, 'app/src/DemoResetTask.php'));
+if (localSource) {
+  // The files of a local checkout that git would commit: tracked and new ones, without the ignored (vendor/, .env).
+  console.log(`$ copying ${localSource}`);
+  const files = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], { cwd: localSource })
+    .toString()
+    .split('\0')
+    .filter((file) => file && existsSync(resolve(localSource, file)));
+
+  for (const file of files) {
+    mkdirSync(dirname(resolve(out, file)), { recursive: true });
+    cpSync(resolve(localSource, file), resolve(out, file));
+  }
+} else {
+  // The site at its ref, without its git history.
+  run('git', ['init', '--quiet']);
+  run('git', ['fetch', '--quiet', '--depth=1', values.source, values.ref]);
+  run('git', ['checkout', '--quiet', 'FETCH_HEAD']);
+  rmSync(resolve(out, '.git'), { recursive: true, force: true });
+}
+
 cpSync(resolve(root, 'overlay'), out, { recursive: true });
 
 // ext-intl is needed at runtime only (the WebAssembly PHP has it); the host PHP may lack it.
 const composerEnv = { ...process.env, SS_VENDOR_METHOD: 'copy', COMPOSER_NO_INTERACTION: '1', COMPOSER_IGNORE_PLATFORM_REQ: 'ext-intl' };
 
-run('composer', ['remove', '--no-install', 'silverstripe/dynamodb', 'symfony/process'], { env: composerEnv });
 run('composer', ['require', '--no-install', 'silverstripe/sqlite3:^4'], { env: composerEnv });
 run('composer', ['install', '--no-dev', '--optimize-autoloader'], { env: composerEnv });
 
@@ -63,21 +81,9 @@ async function inWasm(description, runner, args) {
 }
 
 await inWasm('sake db:build --flush', runSake, ['db:build', '--flush']);
+await inWasm('sake tasks:seed-content', runSake, ['tasks:seed-content']);
 
-// The demo's content: its database dump (without members) and its assets.
-cpSync(resolve(root, 'bin/import-demo-content.php'), resolve(out, 'silverstripe-cache/import-demo-content.php'));
-await inWasm('import-demo-content.php', runCli, [
-  `${PROJECT_ROOT}/silverstripe-cache/import-demo-content.php`,
-  `${PROJECT_ROOT}/.reset/db_reset.sql`,
-  `${PROJECT_ROOT}/database/silverstripe.sqlite`,
-]);
-rmSync(resolve(out, 'silverstripe-cache/import-demo-content.php'));
-cpSync(resolve(out, '.reset/assets_reset'), resolve(out, 'public/assets'), { recursive: true });
-
-// Brings the imported records up to date with this version's schema and writes the static error pages.
-await inWasm('sake db:build', runSake, ['db:build']);
-
-// Visits every page once: fills the caches in silverstripe-cache/, above all the oEmbed results (see
+// Visits every page once: fills the caches in silverstripe-cache/, e.g. oEmbed results (see
 // overlay/playground/_config/playground.yml), which the browser could not fetch.
 console.log('$ Visiting the pages (WebAssembly)');
 const server = await serve({ site: out, port: 8799 });
