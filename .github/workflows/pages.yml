@@ -1,8 +1,10 @@
 name: Deploy the playground
 
-# Publishes web/dist to GitHub Pages. Pages must be enabled with "GitHub Actions" as source
-# (Settings > Pages) before this workflow can deploy.
+# Publishes web/dist to GitHub Pages on every push to main, or by hand. Pages must be enabled with
+# "GitHub Actions" as source (Settings > Pages) before this workflow can deploy.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
