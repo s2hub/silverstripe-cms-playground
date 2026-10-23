@@ -27,8 +27,7 @@ const stage = resolve(root, 'build/bundle');
 
 /** Paths (relative to the project) left out of site.zip. */
 const SKIP = [
-  /^\.(ddev|git|github)(\/|$)/,
-  /^(README|LICENSE)\.md$/,
+  /^\.(git|github)(\/|$)/,
   /^vendor\/.*\/(tests|docs|\.github|client\/src|node_modules)(\/|$)/,
   /^vendor\/.*\.(md|map)$/,
   /^vendor\/bin\//,

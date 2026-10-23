@@ -1,7 +1,8 @@
 // Builds the playground's Silverstripe site in build/site from the site repository (see site-source.mjs).
 //
 // 1. Fetches the site at its ref (nothing of it is kept in this repository), or copies a local checkout (--source).
-// 2. Copies overlay/ on top: .env for SQLite, and the playground module (settings for PHP in WebAssembly).
+// 2. Keeps the project's composer files in .playground/ (for the project download) and copies overlay/ on top:
+//    .env for SQLite, and the playground module (settings for PHP in WebAssembly).
 // 3. Requires silverstripe/sqlite3 and installs with Composer; module resources are copied into public/_resources
 //    (no symlinks).
 // 4. Builds the database with PHP in WebAssembly, at the same path the browser uses, so the manifest cache in
@@ -55,6 +56,13 @@ if (localSource) {
   run('git', ['fetch', '--quiet', '--depth=1', values.source, values.ref]);
   run('git', ['checkout', '--quiet', 'FETCH_HEAD']);
   rmSync(resolve(out, '.git'), { recursive: true, force: true });
+}
+
+// The project's own composer files, for the project download (web/src/export-project.php): the build adds sqlite3.
+mkdirSync(resolve(out, '.playground'), { recursive: true });
+
+for (const file of ['composer.json', 'composer.lock']) {
+  cpSync(resolve(out, file), resolve(out, '.playground', file));
 }
 
 cpSync(resolve(root, 'overlay'), out, { recursive: true });

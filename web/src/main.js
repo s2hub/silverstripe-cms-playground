@@ -1,6 +1,6 @@
 // Main page of the Silverstripe Playground: registers the service worker, starts the PHP worker, shows Silverstripe
-// in an iframe and offers saving, exporting and importing playgrounds (adapted from the Joomla Playground's), and a
-// code editor for app/ (see code-editor.js).
+// in an iframe and offers saving playgrounds in the browser (adapted from the Joomla Playground's), a code editor for
+// app/ (see code-editor.js) and a download of the site as a project to run with ddev.
 //
 // ?site=<slug> opens a site saved in this browser; without it, a new temporary playground starts.
 // ?url=<path> sets the page to open first (default: the CMS), ?login=no starts logged out.
@@ -19,9 +19,7 @@ const elements = {
   newSite: document.querySelector('#new-site'),
   reset: document.querySelector('#reset-site'),
   save: document.querySelector('#save-site'),
-  exportSite: document.querySelector('#export-site'),
-  importSite: document.querySelector('#import-site'),
-  importFile: document.querySelector('#import-file'),
+  download: document.querySelector('#download-project'),
   sitesMenu: document.querySelector('#sites-menu'),
   sitesList: document.querySelector('#sites-list'),
   credentials: document.querySelector('#credentials'),
@@ -42,7 +40,7 @@ function setStatus(message, isError = false) {
 }
 
 function setBusy(busy) {
-  for (const button of [elements.site, elements.admin, elements.code, elements.newSite, elements.exportSite, elements.importSite]) {
+  for (const button of [elements.site, elements.admin, elements.code, elements.newSite, elements.download]) {
     button.disabled = busy;
   }
 
@@ -86,7 +84,7 @@ function startWorker() {
 }
 
 /**
- * Starts a playground in a new PHP worker: from the bundle, a saved site or an imported zip.
+ * Starts a playground in a new PHP worker: from the bundle or a saved site.
  */
 async function boot({ landingPage, ...options } = {}, transfer = []) {
   setBusy(true);
@@ -174,42 +172,28 @@ async function saveSite() {
   }
 }
 
-async function exportSite() {
+/**
+ * Downloads the site as an ordinary Silverstripe project to run with ddev, with its content and a git repository.
+ */
+async function downloadProject() {
   setBusy(true);
-  setStatus('Exporting the site');
+  setStatus('Exporting the project');
 
   try {
-    const bytes = await call('exportSite');
-    const name = `${playground.site ?? 'silverstripe-playground'}-${new Date().toISOString().slice(0, 10)}.zip`;
+    // Also the name of the ddev project: letters, digits and hyphens (a saved site's slug is one).
+    const folder = playground.site ?? 'silverstripe-playground-export';
+    const bytes = await call('downloadProject', { folder });
     const link = Object.assign(document.createElement('a'), {
       href: URL.createObjectURL(new Blob([bytes], { type: 'application/zip' })),
-      download: name,
+      download: `${folder}-${new Date().toISOString().slice(0, 10)}.zip`,
     });
 
     link.click();
     setTimeout(() => URL.revokeObjectURL(link.href), 10000);
     show(null);
+    setStatus('Downloaded: unzip it and run "ddev start" in the folder');
   } catch (error) {
     setStatus(error.message, true);
-    setBusy(false);
-  }
-}
-
-async function importSite(file) {
-  const bytes = await file.arrayBuffer();
-
-  // An imported site starts as a temporary playground; it can be saved from there.
-  history.replaceState(null, '', base.pathname);
-
-  try {
-    const result = await boot({ zip: bytes }, [bytes]);
-    const from = result.importedFrom?.silverstripe;
-
-    if (from && from !== result.manifest.silverstripe) {
-      setStatus(`Imported a Silverstripe ${from} site into the Silverstripe ${result.manifest.silverstripe} playground: module resources may not match`, true);
-    }
-  } catch (error) {
-    setStatus(`Import failed: ${error.message}`, true);
     setBusy(false);
   }
 }
@@ -295,9 +279,7 @@ async function start() {
   elements.newSite.onclick = () => (location.href = base.pathname);
   elements.reset.onclick = () => confirm('Throw this playground away and start again from the same link?') && location.reload();
   elements.save.onclick = saveSite;
-  elements.exportSite.onclick = exportSite;
-  elements.importSite.onclick = () => elements.importFile.click();
-  elements.importFile.onchange = () => elements.importFile.files[0] && importSite(elements.importFile.files[0]);
+  elements.download.onclick = downloadProject;
   elements.sitesMenu.ontoggle = () => elements.sitesMenu.open && renderSites();
 
   // A saved site writes its changes shortly after requests; when the tab is hidden or closed, write them now.
@@ -318,7 +300,6 @@ start().catch((error) => {
   console.error(error);
   setStatus(error.message, true);
 
-  // No playground runs: only starting a new one or importing one makes sense.
+  // No playground runs: only starting a new one makes sense.
   elements.newSite.disabled = false;
-  elements.importSite.disabled = false;
 });

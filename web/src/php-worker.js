@@ -5,8 +5,8 @@
 // password, logs in, and answers the requests the service worker sends for that scope. The project comes from:
 // - the pre-built bundle (silverstripe/site.zip, see bin/build-browser-bundle.mjs): a temporary playground;
 // - a saved site in the browser's private file system (OPFS): the zip it started from plus a snapshot of the files
-//   that changed since, rewritten shortly after requests that change files (see storage.js);
-// - an imported zip (an export of a playground).
+//   that changed since, rewritten shortly after requests that change files (see storage.js).
+// It also exports the site as an ordinary project to run with ddev (see export-project.php).
 //
 // The page talks to it with messages { type, id, ... }; the worker answers { type: 'result', id, value | error }
 // and sends { type: 'progress', message } while it works.
@@ -15,6 +15,7 @@ import { PHP, PHPRequestHandler, setPhpIniEntries } from '@php-wasm/universal';
 import { certificateToPEM, generateCertificate, loadWebRuntime } from '@php-wasm/web';
 import { journalFSEvents } from '@php-wasm/fs-journal';
 import { PREPEND_FILE, prependCode } from './prepend.js';
+import exportProjectScript from './export-project.php?raw';
 import { hasBase, readBase, readMeta, readSnapshot, siteLockName, writeBase, writeMeta, writeSnapshot } from './storage.js';
 
 export const PHP_VERSION = '8.4';
@@ -65,7 +66,7 @@ function serialized(task) {
   return run;
 }
 
-const actions = { boot, save, exportSite, flush, listFiles, readFile, writeFile, deleteFile, flushCaches, devBuild };
+const actions = { boot, save, downloadProject, flush, listFiles, readFile, writeFile, deleteFile, flushCaches, devBuild };
 
 self.onmessage = async ({ data }) => {
   const action = actions[data?.type];
@@ -91,10 +92,9 @@ function progress(message) {
  * @param {string} options.base     URL of the playground (the folder of index.html)
  * @param {string} options.scope    This tab's scope, e.g. "scope-abc123"
  * @param {string} [options.site]   Slug of a saved site to open
- * @param {ArrayBuffer} [options.zip] An exported playground to start from
  * @param {boolean} [options.login] Log in as the admin (default)
  */
-async function boot({ base, scope, site = null, zip = null, login = true }) {
+async function boot({ base, scope, site = null, login = true }) {
   const started = performance.now();
   const timings = {};
   const lap = (name) => (timings[name] = Math.round(performance.now() - started));
@@ -124,7 +124,7 @@ async function boot({ base, scope, site = null, zip = null, login = true }) {
       tcpOverFetch: { CAroot: caRoot },
     }).then((runtime) => (lap('php'), new PHP(runtime))),
     fetch(new URL('manifest.json', bundle)).then((response) => response.json()),
-    siteFiles({ bundle, site, meta, zip }).then((files) => (lap(meta ? 'read' : 'download'), files)),
+    siteFiles({ bundle, site, meta }).then((files) => (lap(meta ? 'read' : 'download'), files)),
   ]);
 
   const password = meta?.password ?? randomPassword();
@@ -142,13 +142,8 @@ async function boot({ base, scope, site = null, zip = null, login = true }) {
     if ($zip->open('/tmp/site.zip') !== true || !$zip->extractTo('${PROJECT_ROOT}')) {
         throw new RuntimeException('Cannot unpack the site');
     }
-    // An export says which Silverstripe version it holds (see exportSite()).
-    file_put_contents('/tmp/archive-comment.json', (string) $zip->getArchiveComment());
     $zip->close();
     unlink('/tmp/site.zip');
-    if (!is_file('${PROJECT_ROOT}/.env') || !is_file('${PROJECT_ROOT}/database/silverstripe.sqlite')) {
-        throw new RuntimeException('This zip is not a Silverstripe Playground export');
-    }
   `);
   lap('unpack');
 
@@ -222,17 +217,16 @@ async function boot({ base, scope, site = null, zip = null, login = true }) {
       timings,
       phpVersion: PHP_VERSION,
       site: state.site,
-      importedFrom: zip ? siteComment(php) : null,
     },
   };
 }
 
 /**
- * The zip to start from (the bundle, an imported export, or a saved site's base), and a saved site's snapshot.
+ * The zip to start from (the bundle, or a saved site's base), and a saved site's snapshot.
  */
-async function siteFiles({ bundle, site, meta, zip }) {
+async function siteFiles({ bundle, site, meta }) {
   if (!meta) {
-    return { bytes: zip ? new Uint8Array(zip) : await download(new URL('site.zip', bundle)), snapshot: null };
+    return { bytes: await download(new URL('site.zip', bundle)), snapshot: null };
   }
 
   const [bytes, snapshot] = await Promise.all([readBase(meta.base), readSnapshot(site)]);
@@ -471,47 +465,39 @@ async function restoreSnapshot(php, bytes) {
 }
 
 /**
- * Zips the whole project as a download. The caches stay in: an imported site then starts as fast as a new one.
+ * Exports the site as an ordinary Silverstripe project with ddev, its content and a git repository (see
+ * export-project.php), as a zip to download.
+ *
+ * @param {string} folder The name of the project folder in the zip
  */
-async function exportSite() {
-  if (!state) {
-    throw new Error('The playground is not running');
+async function downloadProject({ folder }) {
+  const php = running();
+
+  php.writeFile('/tmp/export-project.php', exportProjectScript);
+  php.writeFile('/tmp/export-project.json', JSON.stringify({
+    root: PROJECT_ROOT,
+    database: `${PROJECT_ROOT}/database/silverstripe.sqlite`,
+    zip: '/tmp/project.zip',
+    folder,
+    message: 'Exported from the Silverstripe Playground',
+    time: Math.floor(Date.now() / 1000),
+  }));
+
+  await serialized(async () => {
+    const response = await php.run({ scriptPath: '/tmp/export-project.php' });
+
+    if (response.exitCode !== 0 || response.errors) {
+      throw new Error(`The export failed: ${response.errors || response.text}`);
+    }
+  });
+
+  const bytes = php.readFileAsBuffer('/tmp/project.zip');
+
+  for (const file of ['/tmp/project.zip', '/tmp/export-project.php', '/tmp/export-project.json']) {
+    php.unlink(file);
   }
-
-  const comment = JSON.stringify({ silverstripePlayground: 1, silverstripe: state.manifest.silverstripe, exported: new Date().toISOString() });
-
-  await serialized(() =>
-    runPhp(state.php, `
-      $root = '${PROJECT_ROOT}';
-      $zip  = new ZipArchive();
-      $zip->open('/tmp/export.zip', ZipArchive::CREATE | ZipArchive::OVERWRITE);
-      $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS));
-      foreach ($files as $file) {
-          $relative = substr($file->getPathname(), strlen($root) + 1);
-          if ($file->isFile() && !str_starts_with($relative, 'public/assets/_tinymce/')) {
-              $zip->addFile($file->getPathname(), $relative);
-          }
-      }
-      $zip->setArchiveComment(${JSON.stringify(comment)});
-      $zip->close();
-    `)
-  );
-
-  const bytes = state.php.readFileAsBuffer('/tmp/export.zip');
-  state.php.unlink('/tmp/export.zip');
 
   return { value: bytes.buffer, transfer: [bytes.buffer] };
-}
-
-/**
- * The comment an export carries: the Silverstripe version of the site.
- */
-function siteComment(php) {
-  try {
-    return JSON.parse(php.readFileAsText('/tmp/archive-comment.json'));
-  } catch {
-    return null;
-  }
 }
 
 /** The folders the code editor may change (see code-editor.js). */

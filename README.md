@@ -22,8 +22,7 @@ shows it.
 | **New** | Start a new playground. |
 | **Start over** | Throw this playground away and start again from the same link. |
 | **Save…** | Keep this playground in your browser under a name. From then on, changes are saved as you work. |
-| **Export** | Download the whole site as a zip. |
-| **Import…** | Start a playground from such a zip. |
+| **Download project** | Download the site as an ordinary project to run with ddev (see below). |
 | **My sites** | Open, rename or delete the sites you saved. |
 
 **Temporary or saved?**
@@ -31,8 +30,13 @@ shows it.
 - A new playground is temporary: reloading the page or closing the tab throws it away.
 - After **Save…**, the address bar shows `?site=<name>`. That address reopens the site, also after a reload or a
   browser restart. A saved site keeps its admin password.
-- A saved site stays in this browser only (in its private storage for this website, OPFS); use **Export** to move it
-  elsewhere. It can be open in one tab at a time.
+- A saved site stays in this browser only (in its private storage for this website, OPFS). It can be open in one tab
+  at a time.
+
+**Taking it home.** **Download project** gives a zip with the site as an ordinary Silverstripe project: the code
+(without `vendor/`), `content/dump.sql` and `content/assets/` with the content, ddev settings and a git repository
+with one commit. Unzip it and run `ddev start` in its folder: the first start runs `composer install` and
+`dev/build`, then loads the content (`.ddev/playground-setup.sh`). Log in with `admin` / `password`.
 
 **Building something.** **Code** opens an editor (Monaco, the editor of VS Code) with the files in `app/`:
 
@@ -77,6 +81,10 @@ tasks, e.g. a new field for contacts or a block of your own.
   the module and theme resources next to it as static files.
 - **`web/`** is the static playground (Vite). Each playground gets a random admin password and its scope URL
   (`SS_BASE_URL`) through a PHP file that runs before every request (`web/src/prepend.js`).
+- **The project download** (`web/src/export-project.php`, run by the PHP worker) writes the database as MySQL
+  INSERTs and leaves the tables to `dev/build`, so no schema has to be translated from SQLite; it builds the git
+  objects and index itself. The build keeps the project's own `composer.json`/`composer.lock` in `.playground/`
+  for it.
 - **Saved sites** (`web/src/storage.js`) are stored as the zip they started from plus a snapshot of the files that
   changed since (the SQLite database, assets), which the PHP worker rewrites shortly after requests that change
   files. Caches are left out of snapshots; the base brings them.
