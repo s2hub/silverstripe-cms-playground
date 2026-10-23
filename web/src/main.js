@@ -16,7 +16,6 @@ const elements = {
   admin: document.querySelector('#open-admin'),
   code: document.querySelector('#toggle-code'),
   codePanel: document.querySelector('#code-panel'),
-  newSite: document.querySelector('#new-site'),
   reset: document.querySelector('#reset-site'),
   save: document.querySelector('#save-site'),
   download: document.querySelector('#download-project'),
@@ -40,13 +39,31 @@ function setStatus(message, isError = false) {
 }
 
 function setBusy(busy) {
-  for (const button of [elements.site, elements.admin, elements.code, elements.newSite, elements.download]) {
+  for (const button of [elements.site, elements.admin, elements.code, elements.reset, elements.download]) {
     button.disabled = busy;
   }
 
-  // A saved site keeps its changes; saving again and starting over are for temporary playgrounds.
+  // A saved site is saved already.
   elements.save.disabled = busy || Boolean(playground?.site);
-  elements.reset.disabled = busy || Boolean(playground?.site);
+}
+
+/**
+ * Starts a new playground from the bundle, with the same link: landing page and login stay, a saved site is left (it
+ * stays in the browser).
+ */
+function reset() {
+  const message = playground?.site
+    ? `Start a new playground? "${playground.site}" stays saved under My sites.`
+    : 'Throw this playground away and start a new one?';
+
+  if (!confirm(message)) {
+    return;
+  }
+
+  const url = new URL(location.href);
+
+  url.searchParams.delete('site');
+  location.href = url.href;
 }
 
 /**
@@ -276,8 +293,7 @@ async function start() {
   elements.site.onclick = () => (elements.frame.src = `${playground.siteUrl}/`);
   elements.admin.onclick = () => (elements.frame.src = `${playground.siteUrl}/admin/`);
   elements.code.onclick = () => toggleCode().catch((error) => setStatus(error.message, true));
-  elements.newSite.onclick = () => (location.href = base.pathname);
-  elements.reset.onclick = () => confirm('Throw this playground away and start again from the same link?') && location.reload();
+  elements.reset.onclick = reset;
   elements.save.onclick = saveSite;
   elements.download.onclick = downloadProject;
   elements.sitesMenu.ontoggle = () => elements.sitesMenu.open && renderSites();
@@ -301,5 +317,5 @@ start().catch((error) => {
   setStatus(error.message, true);
 
   // No playground runs: only starting a new one makes sense.
-  elements.newSite.disabled = false;
+  elements.reset.disabled = false;
 });

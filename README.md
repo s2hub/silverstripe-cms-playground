@@ -19,8 +19,7 @@ shows it.
 |---|---|
 | **Site** / **CMS** | Show the front end or the CMS. |
 | **Code** | Edit the project's code in `app/` next to the site (see below). |
-| **New** | Start a new playground. |
-| **Start over** | Throw this playground away and start again from the same link. |
+| **Reset** | Start a new playground from the same link. A saved site stays saved (under **My sites**). |
 | **Save…** | Keep this playground in your browser under a name. From then on, changes are saved as you work. |
 | **Download project** | Download the site as an ordinary project to run with ddev (see below). |
 | **My sites** | Open, rename or delete the sites you saved. |
