@@ -1,16 +1,21 @@
 // PHP worker of the Silverstripe Playground: runs Silverstripe in PHP compiled to WebAssembly (adapted from the
 // Joomla Playground's).
 //
-// It unpacks the pre-built site (silverstripe/site.zip, see bin/build-browser-bundle.mjs) into PHP's in-memory
-// filesystem, points it at this tab's scope URL, gives the admin a random password, logs in, and answers the
-// requests the service worker sends for that scope.
+// It puts a Silverstripe project into PHP's in-memory filesystem, points it at this tab's scope URL, sets the admin
+// password, logs in, and answers the requests the service worker sends for that scope. The project comes from:
+// - the pre-built bundle (silverstripe/site.zip, see bin/build-browser-bundle.mjs): a temporary playground;
+// - a saved site in the browser's private file system (OPFS): the zip it started from plus a snapshot of the files
+//   that changed since, rewritten shortly after requests that change files (see storage.js);
+// - an imported zip (an export of a playground).
 //
 // The page talks to it with messages { type, id, ... }; the worker answers { type: 'result', id, value | error }
 // and sends { type: 'progress', message } while it works.
 
 import { PHP, PHPRequestHandler, setPhpIniEntries } from '@php-wasm/universal';
 import { certificateToPEM, generateCertificate, loadWebRuntime } from '@php-wasm/web';
+import { journalFSEvents } from '@php-wasm/fs-journal';
 import { PREPEND_FILE, prependCode } from './prepend.js';
+import { hasBase, readBase, readMeta, readSnapshot, siteLockName, writeBase, writeMeta, writeSnapshot } from './storage.js';
 
 export const PHP_VERSION = '8.4';
 
@@ -19,14 +24,37 @@ const DOCUMENT_ROOT = `${PROJECT_ROOT}/public`;
 const CA_BUNDLE = '/internal/shared/ca-bundle.crt';
 const ADMIN_USERNAME = 'admin';
 
+/**
+ * Caches and generated files, left out of snapshots (a PHP regular expression): the base brings the caches, and the
+ * combined TinyMCE scripts depend on the scope URL and are made again when needed.
+ */
+const SKIP = '#^(silverstripe-cache|public/assets/_tinymce)(/|$)#';
+
+/**
+ * After a form submission (any method but GET and HEAD) that changed files, a snapshot is written before the next
+ * request runs. After other requests (sessions, caches) it is written this long after the last one that changed
+ * files, and at most this long after the first.
+ */
+const SNAPSHOT_DELAY = 500;
+const SNAPSHOT_MAX_DELAY = 5000;
+
 const channel = new BroadcastChannel('silverstripe-playground');
 
-/** @type {{php: PHP, handler: PHPRequestHandler}|null} */
+/**
+ * base:    the zip the site started from; its bytes are kept until the site is saved
+ * changes: paths below the project root that changed since the site was unpacked from its base, and the folders
+ *          that were renamed (moved with all their files)
+ * dirty:   whether files changed since the last snapshot
+ *
+ * @type {{php: PHP, handler: PHPRequestHandler, manifest: object, password: string, site: string|null,
+ *   base: {id: string|null, bytes: Uint8Array|null}, changes: {paths: Set<string>, trees: Set<string>}, dirty: boolean}}
+ */
 let state = null;
 
 /**
  * Runs PHP requests one after the other. With a single PHP instance, @php-wasm rejects a request that arrives
- * while another one runs (SinglePHPInstanceManager), and the CMS fires several requests at once.
+ * while another one runs (SinglePHPInstanceManager), and the CMS fires several requests at once. Snapshots run in
+ * this queue too, so no request changes files while one is taken.
  */
 let queue = Promise.resolve();
 
@@ -37,7 +65,7 @@ function serialized(task) {
   return run;
 }
 
-const actions = { boot };
+const actions = { boot, save, exportSite, flush };
 
 self.onmessage = async ({ data }) => {
   const action = actions[data?.type];
@@ -60,23 +88,35 @@ function progress(message) {
 
 /**
  * @param {object} options
- * @param {string} options.base  URL of the playground (the folder of index.html)
- * @param {string} options.scope This tab's scope, e.g. "scope-abc123"
+ * @param {string} options.base     URL of the playground (the folder of index.html)
+ * @param {string} options.scope    This tab's scope, e.g. "scope-abc123"
+ * @param {string} [options.site]   Slug of a saved site to open
+ * @param {ArrayBuffer} [options.zip] An exported playground to start from
  * @param {boolean} [options.login] Log in as the admin (default)
  */
-async function boot({ base, scope, login = true }) {
+async function boot({ base, scope, site = null, zip = null, login = true }) {
   const started = performance.now();
   const timings = {};
   const lap = (name) => (timings[name] = Math.round(performance.now() - started));
   const siteUrl = new URL(`${scope}/`, base).href.replace(/\/$/, '');
   const bundle = new URL('silverstripe/', base);
 
+  if (site) {
+    await lockSite(site);
+  }
+
+  const meta = site ? await readMeta(site) : null;
+
+  if (site && !meta) {
+    throw new Error(`There is no saved site "${site}" in this browser`);
+  }
+
   progress(`Loading PHP ${PHP_VERSION}`);
   const caRoot = await generateCertificate({
     subject: { commonName: 'Silverstripe Playground CA', organizationName: 'Silverstripe Playground', countryName: 'DE' },
     basicConstraints: { ca: true },
   });
-  const [php, manifest, zip] = await Promise.all([
+  const [php, manifest, files] = await Promise.all([
     loadWebRuntime(PHP_VERSION, {
       // Silverstripe 6 requires ext-intl, which @php-wasm only loads on request.
       withIntl: true,
@@ -84,28 +124,46 @@ async function boot({ base, scope, login = true }) {
       tcpOverFetch: { CAroot: caRoot },
     }).then((runtime) => (lap('php'), new PHP(runtime))),
     fetch(new URL('manifest.json', bundle)).then((response) => response.json()),
-    download(new URL('site.zip', bundle)).then((bytes) => (lap('download'), bytes)),
+    siteFiles({ bundle, site, meta, zip }).then((files) => (lap(meta ? 'read' : 'download'), files)),
   ]);
 
-  const password = randomPassword();
+  const password = meta?.password ?? randomPassword();
 
   // php.ini settings, before PHP runs anything.
   await enableNetwork(php, caRoot);
   php.writeFile(PREPEND_FILE, prependCode({ SS_BASE_URL: siteUrl, SS_DEFAULT_ADMIN_PASSWORD: password }));
   await setPhpIniEntries(php, { auto_prepend_file: PREPEND_FILE });
 
-  progress('Unpacking Silverstripe');
+  progress(meta ? 'Opening the saved site' : 'Unpacking Silverstripe');
   php.mkdir(PROJECT_ROOT);
-  php.writeFile('/tmp/site.zip', zip);
+  php.writeFile('/tmp/site.zip', files.bytes);
   await runPhp(php, `
     $zip = new ZipArchive();
     if ($zip->open('/tmp/site.zip') !== true || !$zip->extractTo('${PROJECT_ROOT}')) {
         throw new RuntimeException('Cannot unpack the site');
     }
+    // An export says which Silverstripe version it holds (see exportSite()).
+    file_put_contents('/tmp/archive-comment.json', (string) $zip->getArchiveComment());
     $zip->close();
     unlink('/tmp/site.zip');
+    if (!is_file('${PROJECT_ROOT}/.env') || !is_file('${PROJECT_ROOT}/database/silverstripe.sqlite')) {
+        throw new RuntimeException('This zip is not a Silverstripe Playground export');
+    }
   `);
   lap('unpack');
+
+  const changes = { paths: new Set(), trees: new Set() };
+
+  if (files.snapshot) {
+    for (const path of await restoreSnapshot(php, files.snapshot)) {
+      changes.paths.add(path);
+    }
+
+    lap('restore');
+  }
+
+  // From here on, note every path below the project root that changes: those go into the snapshots.
+  journalFSEvents(php, PROJECT_ROOT, (entry) => trackChange(changes, entry));
 
   const createHandler = () =>
     new PHPRequestHandler({
@@ -116,7 +174,21 @@ async function boot({ base, scope, login = true }) {
       getFileNotFoundAction: () => ({ type: 'internal-redirect', uri: '/index.php' }),
     });
 
-  state = { php, handler: createHandler() };
+  state = {
+    php,
+    handler: createHandler(),
+    manifest,
+    password,
+    site: null,
+    base: { id: meta?.base ?? null, bytes: meta ? null : files.bytes },
+    changes,
+    dirty: false,
+  };
+
+  if (meta) {
+    state.site = site;
+    await writeMeta(site, { ...meta, opened: new Date().toISOString() });
+  }
 
   if (login) {
     progress('Logging in');
@@ -125,6 +197,7 @@ async function boot({ base, scope, login = true }) {
   }
 
   lap('ready');
+  scheduleSnapshot();
 
   channel.onmessage = ({ data }) => {
     if (data?.type === 'request' && data.scope === scope) {
@@ -133,8 +206,325 @@ async function boot({ base, scope, login = true }) {
   };
 
   return {
-    value: { siteUrl, username: ADMIN_USERNAME, password, manifest, timings, phpVersion: PHP_VERSION },
+    value: {
+      siteUrl,
+      username: ADMIN_USERNAME,
+      password,
+      manifest,
+      timings,
+      phpVersion: PHP_VERSION,
+      site: state.site,
+      importedFrom: zip ? siteComment(php) : null,
+    },
   };
+}
+
+/**
+ * The zip to start from (the bundle, an imported export, or a saved site's base), and a saved site's snapshot.
+ */
+async function siteFiles({ bundle, site, meta, zip }) {
+  if (!meta) {
+    return { bytes: zip ? new Uint8Array(zip) : await download(new URL('site.zip', bundle)), snapshot: null };
+  }
+
+  const [bytes, snapshot] = await Promise.all([readBase(meta.base), readSnapshot(site)]);
+
+  if (!bytes) {
+    throw new Error(`The files of the site "${site}" are missing in this browser`);
+  }
+
+  return { bytes, snapshot };
+}
+
+/**
+ * Saves the running playground as a site in OPFS. From then on, a snapshot of its changes is written there shortly
+ * after requests that change files.
+ */
+async function save({ site, title }) {
+  if (!state) {
+    throw new Error('The playground is not running');
+  }
+
+  if (state.site) {
+    throw new Error(`This playground is already saved as "${state.site}"`);
+  }
+
+  await lockSite(site);
+  await serialized(() => persist(site, title));
+
+  return { value: { site } };
+}
+
+/**
+ * Writes the base (once per zip), a first snapshot and then meta.json: a site is listed only when it is complete.
+ */
+async function persist(site, title) {
+  progress('Saving the site in this browser');
+
+  const id = await sha256(state.base.bytes);
+
+  if (!(await hasBase(id))) {
+    await writeBase(id, state.base.bytes);
+  }
+
+  await snapshot(site);
+  await writeMeta(site, {
+    title,
+    password: state.password,
+    silverstripe: state.manifest.silverstripe,
+    base: id,
+    created: new Date().toISOString(),
+  });
+  state.base = { id, bytes: null };
+  state.site = site;
+}
+
+/**
+ * Notes a filesystem operation of PHP (see journalFSEvents()) as a changed path, relative to the project root.
+ */
+function trackChange(changes, { operation, path, toPath, nodeType }) {
+  const relative = (absolute) => (absolute?.startsWith(`${PROJECT_ROOT}/`) ? absolute.slice(PROJECT_ROOT.length + 1) : null);
+  const from = relative(path);
+  const to = operation === 'RENAME' ? relative(toPath) : null;
+
+  if (from) {
+    changes.paths.add(from);
+  }
+
+  if (to) {
+    changes.paths.add(to);
+
+    if (nodeType === 'directory') {
+      changes.trees.add(to);
+    }
+  }
+
+  if (state && (from || to)) {
+    state.dirty = true;
+  }
+}
+
+let snapshotTimer = null;
+let firstChange = 0;
+
+/**
+ * Writes a snapshot of a saved site: next in the request queue, or after a quiet moment but not later than
+ * SNAPSHOT_MAX_DELAY after the first change, so a busy site is saved too.
+ */
+function scheduleSnapshot({ now: immediately = false } = {}) {
+  if (!state?.site || !state.dirty) {
+    return;
+  }
+
+  const now = performance.now();
+
+  if (snapshotTimer) {
+    clearTimeout(snapshotTimer);
+  } else {
+    firstChange = now;
+  }
+
+  if (immediately) {
+    snapshotTimer = null;
+    serialized(() => state.dirty && snapshot(state.site)).catch((error) => console.error('Cannot save the site:', error));
+
+    return;
+  }
+
+  snapshotTimer = setTimeout(() => {
+    snapshotTimer = null;
+    serialized(() => state.dirty && snapshot(state.site)).catch((error) => console.error('Cannot save the site:', error));
+  }, Math.max(0, Math.min(SNAPSHOT_DELAY, firstChange + SNAPSHOT_MAX_DELAY - now)));
+}
+
+/**
+ * The page is hidden or closing: write the pending snapshot now.
+ */
+async function flush() {
+  if (state?.site) {
+    clearTimeout(snapshotTimer);
+    snapshotTimer = null;
+    await serialized(() => state.dirty && snapshot(state.site));
+  }
+
+  return { value: null };
+}
+
+/**
+ * Zips the changed files (files/<path>) and the deleted paths (deleted.json), and writes the zip to OPFS.
+ * Runs in the request queue: no request changes files meanwhile.
+ */
+async function snapshot(site) {
+  const started = performance.now();
+
+  state.dirty = false;
+
+  try {
+    state.php.writeFile('/tmp/changes.json', JSON.stringify({ paths: [...state.changes.paths], trees: [...state.changes.trees] }));
+    await runPhp(state.php, `
+      $root    = '${PROJECT_ROOT}';
+      $changes = json_decode(file_get_contents('/tmp/changes.json'), true);
+      unlink('/tmp/changes.json');
+      $zip = new ZipArchive();
+      $zip->open('/tmp/snapshot.zip', ZipArchive::CREATE | ZipArchive::OVERWRITE);
+      $deleted = [];
+      $add = function (string $relative) use ($root, $zip, &$deleted) {
+          if (preg_match(${JSON.stringify(SKIP)}, $relative)) {
+              return;
+          }
+          $path = $root . '/' . $relative;
+          if (is_file($path)) {
+              $zip->addFile($path, 'files/' . $relative);
+          } elseif (is_dir($path)) {
+              $zip->addEmptyDir('files/' . $relative);
+          } else {
+              $deleted[] = $relative;
+          }
+      };
+      foreach ($changes['paths'] as $relative) {
+          $add($relative);
+      }
+      foreach ($changes['trees'] as $tree) {
+          if (is_dir($root . '/' . $tree)) {
+              $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root . '/' . $tree, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::SELF_FIRST);
+              foreach ($files as $file) {
+                  $add(substr($file->getPathname(), strlen($root) + 1));
+              }
+          }
+      }
+      $zip->addFromString('deleted.json', json_encode($deleted));
+      $zip->close();
+    `);
+
+    const bytes = state.php.readFileAsBuffer('/tmp/snapshot.zip');
+
+    state.php.unlink('/tmp/snapshot.zip');
+    await writeSnapshot(site, bytes);
+    console.debug(`Snapshot of "${site}": ${bytes.length} bytes in ${Math.round(performance.now() - started)} ms`);
+  } catch (error) {
+    state.dirty = true;
+
+    throw error;
+  }
+}
+
+/**
+ * Puts a snapshot on top of the unpacked base: removes the deleted paths, writes the changed files.
+ *
+ * @returns {Promise<string[]>} The paths in the snapshot: the changes of the site so far.
+ */
+async function restoreSnapshot(php, bytes) {
+  php.writeFile('/tmp/snapshot.zip', bytes);
+
+  const response = await runPhp(php, `
+    $root = '${PROJECT_ROOT}';
+    $zip  = new ZipArchive();
+    if ($zip->open('/tmp/snapshot.zip') !== true) {
+        throw new RuntimeException('Cannot open the snapshot of the site');
+    }
+    $remove = function (string $path) use (&$remove) {
+        if (is_dir($path) && !is_link($path)) {
+            foreach (array_diff(scandir($path), ['.', '..']) as $name) {
+                $remove($path . '/' . $name);
+            }
+            rmdir($path);
+        } elseif (file_exists($path) || is_link($path)) {
+            unlink($path);
+        }
+    };
+    $paths = json_decode((string) $zip->getFromName('deleted.json'), true) ?: [];
+    foreach ($paths as $relative) {
+        $remove($root . '/' . $relative);
+    }
+    for ($index = 0; $index < $zip->numFiles; $index++) {
+        $name = $zip->getNameIndex($index);
+        if (!str_starts_with($name, 'files/')) {
+            continue;
+        }
+        $relative = rtrim(substr($name, 6), '/');
+        $path     = $root . '/' . $relative;
+        $paths[]  = $relative;
+        if (str_ends_with($name, '/')) {
+            is_dir($path) || mkdir($path, 0777, true);
+            continue;
+        }
+        if (is_dir($path)) {
+            $remove($path);
+        }
+        is_dir(dirname($path)) || mkdir(dirname($path), 0777, true);
+        file_put_contents($path, $zip->getFromIndex($index));
+    }
+    $zip->close();
+    unlink('/tmp/snapshot.zip');
+    echo json_encode($paths);
+  `);
+
+  return JSON.parse(response.text);
+}
+
+/**
+ * Zips the whole project as a download. The caches stay in: an imported site then starts as fast as a new one.
+ */
+async function exportSite() {
+  if (!state) {
+    throw new Error('The playground is not running');
+  }
+
+  const comment = JSON.stringify({ silverstripePlayground: 1, silverstripe: state.manifest.silverstripe, exported: new Date().toISOString() });
+
+  await serialized(() =>
+    runPhp(state.php, `
+      $root = '${PROJECT_ROOT}';
+      $zip  = new ZipArchive();
+      $zip->open('/tmp/export.zip', ZipArchive::CREATE | ZipArchive::OVERWRITE);
+      $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS));
+      foreach ($files as $file) {
+          $relative = substr($file->getPathname(), strlen($root) + 1);
+          if ($file->isFile() && !str_starts_with($relative, 'public/assets/_tinymce/')) {
+              $zip->addFile($file->getPathname(), $relative);
+          }
+      }
+      $zip->setArchiveComment(${JSON.stringify(comment)});
+      $zip->close();
+    `)
+  );
+
+  const bytes = state.php.readFileAsBuffer('/tmp/export.zip');
+  state.php.unlink('/tmp/export.zip');
+
+  return { value: bytes.buffer, transfer: [bytes.buffer] };
+}
+
+/**
+ * The comment an export carries: the Silverstripe version of the site.
+ */
+function siteComment(php) {
+  try {
+    return JSON.parse(php.readFileAsText('/tmp/archive-comment.json'));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * One tab per saved site: two PHP workers writing the same files would overwrite each other's changes.
+ * The lock is held until this worker ends. After a reload, the previous page's worker may still hold it for a
+ * moment, so wait a few seconds before giving up.
+ */
+async function lockSite(site) {
+  const acquired = await new Promise((resolve) => {
+    navigator.locks
+      .request(siteLockName(site), { signal: AbortSignal.timeout(5000) }, () => {
+        resolve(true);
+
+        return new Promise(() => {});
+      })
+      .catch(() => resolve(false));
+  });
+
+  if (!acquired) {
+    throw new Error(`The site "${site}" is open in another tab. Close that tab first.`);
+  }
 }
 
 async function answer({ id, request }) {
@@ -167,6 +557,8 @@ async function answer({ id, request }) {
       headers: { 'content-type': ['text/plain; charset=utf-8'] },
       body: new TextEncoder().encode(String(error?.stack ?? error)),
     });
+  } finally {
+    scheduleSnapshot({ now: !['GET', 'HEAD'].includes(String(request.method ?? 'GET').toUpperCase()) });
   }
 }
 
@@ -221,6 +613,12 @@ async function runPhp(php, code) {
   }
 
   return response;
+}
+
+async function sha256(bytes) {
+  const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+
+  return Array.from(hash, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 async function download(url) {

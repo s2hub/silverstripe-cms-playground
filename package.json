@@ -15,6 +15,7 @@
     "wasm:sake": "node wasm/sake.mjs"
   },
   "devDependencies": {
+    "@php-wasm/fs-journal": "^3.1.60",
     "@php-wasm/node": "^3.1.60",
     "@php-wasm/universal": "^3.1.60",
     "@php-wasm/util": "^3.1.60",
