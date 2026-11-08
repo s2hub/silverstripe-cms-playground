@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" fill="none">
+  <!-- The logo mark on the navy of the toolbar: its light circle would vanish on a white tab. -->
+  <rect width="48" height="48" rx="10" fill="#111c2d"/>
+  <g transform="translate(5.95 10.5)">
+    <path d="M9.04256 18.0851C14.0366 18.0851 18.0851 14.0366 18.0851 9.04256C18.0851 4.04849 14.0366 0 9.04256 0C4.04849 0 0 4.04849 0 9.04256C0 14.0366 4.04849 18.0851 9.04256 18.0851Z" fill="url(#circle)"/>
+    <path d="M36.103 9.07596C36.103 4.08256 32.0539 0.0367619 27.0605 0.0367619C22.0671 0.0367619 19.5536 3.39034 18.569 7.55711C18.2195 9.03564 18.2498 8.90795 18.0481 9.76146C17.0098 14.1299 13.7906 18.0849 9.03919 18.0849C4.61703 18.0816 0.937508 14.9027 0.154559 10.7023C1.01143 19.8457 8.70316 26.9998 18.0717 26.9998C27.4402 26.9998 35.2092 19.7718 35.9989 10.5646" fill="#4C7BE2"/>
+  </g>
+  <defs>
+    <linearGradient id="circle" x1="0" y1="9.04256" x2="18.0818" y2="9.04256" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#BEF4F1"/>
+      <stop offset="0.18" stop-color="#BEF4F1" stop-opacity="0.8"/>
+      <stop offset="0.59" stop-color="#BEF4F1" stop-opacity="0.37"/>
+      <stop offset="0.87" stop-color="#BEF4F1" stop-opacity="0.1"/>
+      <stop offset="1" stop-color="#BEF4F1" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+</svg>
