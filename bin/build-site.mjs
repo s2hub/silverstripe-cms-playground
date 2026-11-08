@@ -58,7 +58,7 @@ if (localSource) {
   rmSync(resolve(out, '.git'), { recursive: true, force: true });
 }
 
-// The project's own composer files, for the project download (web/src/export-project.php): the build adds sqlite3.
+// The project's own composer files, for the project download (engine/export-project.php): the build adds sqlite3.
 mkdirSync(resolve(out, '.playground'), { recursive: true });
 
 for (const file of ['composer.json', 'composer.lock']) {

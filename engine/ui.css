@@ -1,0 +1,367 @@
+/* Styles of the engine's interface parts: code editor (ssp-code), preview (ssp-preview), splitter (ssp-splitter).
+   Colours and fonts are custom properties, so a page can adapt them. */
+
+:root {
+  --ssp-navy: #111c2d;
+  --ssp-blue: #4c7be2;
+  --ssp-green: #286a03;
+  --ssp-orange: #f16522;
+  --ssp-teal: #3addd6;
+  --ssp-grey: #f5f5f5;
+  --ssp-border: #a09b9a;
+  --ssp-border-light: #ccc;
+  --ssp-code: #2d3842;
+  --ssp-font: Rubik, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ssp-mono: "Fira Code", ui-monospace, monospace;
+}
+
+.ssp-code,
+.ssp-code *,
+.ssp-preview,
+.ssp-preview * {
+  box-sizing: border-box;
+}
+
+.ssp-small {
+  padding: 5px 12px;
+  border: 1px solid var(--ssp-border);
+  border-radius: 4px;
+  background: #fff;
+  color: #000;
+  font: 11px var(--ssp-font);
+  cursor: pointer;
+}
+
+.ssp-small--go,
+.ssp-small[aria-pressed="true"] {
+  border-color: var(--ssp-green);
+  background: var(--ssp-green);
+  color: #fff;
+}
+
+.ssp-small:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.ssp-small:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Code editor */
+
+.ssp-code {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  background: #fff;
+  font-family: var(--ssp-font);
+}
+
+.ssp-code__files {
+  display: flex;
+  flex-direction: column;
+  width: 13rem;
+  flex-shrink: 0;
+  border-right: 1px solid var(--ssp-border-light);
+  background: var(--ssp-grey);
+}
+
+.ssp-code__files-head {
+  display: flex;
+  align-items: center;
+  height: 40px;
+  flex-shrink: 0;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--ssp-border-light);
+  font: 500 12px var(--ssp-mono);
+}
+
+.ssp-code__tree {
+  flex: 1;
+  overflow: auto;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  font: 12px/1.8 var(--ssp-mono);
+}
+
+.ssp-code__tree li {
+  display: flex;
+  padding-right: 4px;
+}
+
+.ssp-code__tree li > span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ssp-code__tree li.dir {
+  color: #5c6b7c;
+}
+
+.ssp-code__tree li.file {
+  cursor: pointer;
+}
+
+.ssp-code__tree li.file:hover {
+  background: #e6ebf1;
+}
+
+.ssp-code__tree li.active {
+  background: #dbe5f8;
+  color: var(--ssp-blue);
+}
+
+.ssp-code__tree li.dirty > span::after {
+  content: " •";
+}
+
+.ssp-code__delete {
+  visibility: hidden;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: #a51d2d;
+  cursor: pointer;
+}
+
+.ssp-code__tree li:hover .ssp-code__delete {
+  visibility: visible;
+}
+
+.ssp-code__main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--ssp-code);
+}
+
+.ssp-code__tabs {
+  display: flex;
+  align-items: stretch;
+  height: 40px;
+  flex-shrink: 0;
+  border: 1px solid var(--ssp-border-light);
+  border-width: 0 0 1px;
+  background: var(--ssp-grey);
+}
+
+.ssp-code__tab-list {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.ssp-code__tab-list::-webkit-scrollbar {
+  display: none;
+}
+
+.ssp-code__tab {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 5em;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 0 16px;
+  border-right: 1px solid var(--ssp-border);
+  color: var(--ssp-border);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.ssp-code__tab[aria-selected="true"] {
+  padding: 0 8px 0 20px;
+  border: 1px solid #000;
+  border-top: 4px solid var(--ssp-blue);
+  background: #fff;
+  color: var(--ssp-blue);
+  font-weight: 500;
+}
+
+.ssp-code__tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ssp-code__tab.dirty .ssp-code__tab-name::after {
+  content: " •";
+}
+
+.ssp-code__tab-close {
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0.6;
+  cursor: pointer;
+}
+
+.ssp-code__tab-close:hover {
+  opacity: 1;
+}
+
+.ssp-code__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+}
+
+.ssp-code__editor {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.ssp-code__editor .monaco-editor[hidden] {
+  display: none;
+}
+
+.ssp-code__empty {
+  position: absolute;
+  inset: 20px 16px auto 44px;
+  margin: 0;
+  color: #9aa5b1;
+  font: 13px var(--ssp-mono);
+}
+
+.ssp-code__output {
+  height: 90px;
+  flex-shrink: 0;
+  overflow: auto;
+  margin: 0;
+  padding: 12px 16px 12px 44px;
+  border-top: 1px solid #000;
+  background: var(--ssp-grey);
+  color: #000;
+  font: 12px/1.5 var(--ssp-mono);
+  white-space: pre-wrap;
+}
+
+.ssp-code--output-dark .ssp-code__output {
+  border-top-color: #fff;
+  background: var(--ssp-code);
+  color: #fff;
+}
+
+.ssp-code__output--used {
+  height: 30%;
+}
+
+.ssp-code__output--error {
+  color: #c01c28;
+}
+
+.ssp-code--output-dark .ssp-code__output--error {
+  color: #ff8a80;
+}
+
+/* Preview */
+
+.ssp-preview {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: #fff;
+  font-family: var(--ssp-font);
+}
+
+.ssp-preview__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0 16px 0 10px;
+  border-bottom: 1px solid var(--ssp-border);
+}
+
+.ssp-preview__url {
+  flex: 1 1 12em;
+  min-width: 8em;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--ssp-border);
+  border-radius: 5px;
+  background: #fff;
+  color: #000;
+  font: 12px var(--ssp-font);
+}
+
+.ssp-preview__url:focus {
+  border-color: var(--ssp-blue);
+  outline: 1px solid var(--ssp-blue);
+}
+
+.ssp-preview__toggles {
+  display: flex;
+  gap: 6px;
+}
+
+.ssp-preview__meta {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: #5c6b7c;
+  font: 11px var(--ssp-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ssp-preview__meta:empty {
+  display: none;
+}
+
+.ssp-preview__frame {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.ssp-preview__frame iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+/* Splitter */
+
+.ssp-splitter {
+  position: relative;
+  z-index: 2;
+  width: 7px;
+  flex-shrink: 0;
+  margin: 0 -3px;
+  background: linear-gradient(to right, transparent 3px, var(--ssp-border) 3px, var(--ssp-border) 4px, transparent 4px);
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.ssp-splitter:hover,
+.ssp-splitter:focus-visible,
+.ssp-resizing .ssp-splitter {
+  background: linear-gradient(to right, transparent 2px, var(--ssp-blue) 2px, var(--ssp-blue) 5px, transparent 5px);
+  outline: none;
+}
+
+.ssp-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+/* The iframe would swallow the pointer while resizing. */
+.ssp-resizing iframe {
+  pointer-events: none;
+}

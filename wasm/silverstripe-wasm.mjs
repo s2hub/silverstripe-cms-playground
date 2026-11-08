@@ -9,7 +9,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { PHP, PHPRequestHandler, ProcessIdAllocator, setPhpIniEntries } from '@php-wasm/universal';
 import { createNodeFsMountHandler, loadNodeRuntime } from '@php-wasm/node';
-import { PREPEND_FILE, prependCode } from '../web/src/prepend.js';
+import { PREPEND_FILE, prependCode } from '../engine/prepend.js';
 
 export const PROJECT_ROOT = '/var/www/silverstripe';
 export const DOCUMENT_ROOT = `${PROJECT_ROOT}/public`;

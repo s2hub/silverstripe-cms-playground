@@ -1,0 +1,322 @@
+/* The full playground (app.js) and the parts other pages share with it: toolbar, logo, actions, menus. */
+
+.ssp-app,
+.ssp-app *,
+.ssp-toolbar,
+.ssp-toolbar * {
+  box-sizing: border-box;
+}
+
+.ssp-app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #fff;
+  color: #000;
+  font: 13px/normal var(--ssp-font);
+}
+
+.ssp-app button {
+  font: inherit;
+}
+
+/* Toolbar */
+
+.ssp-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 24px;
+  min-height: 61px;
+  padding: 10px 20px;
+  background: var(--ssp-navy);
+  color: #fff;
+  font: 13px/normal var(--ssp-font);
+}
+
+.ssp-logo {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 7px;
+  margin-right: 20px;
+}
+
+.ssp-logo img {
+  display: block;
+}
+
+.ssp-toolbar__group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ssp-toolbar__actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px 26px;
+  margin-left: auto;
+}
+
+.ssp-status {
+  flex: 1;
+  min-width: 10em;
+  overflow: hidden;
+  color: #a9b6c6;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ssp-status--error {
+  color: #ff8a80;
+}
+
+.ssp-action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ssp-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: #fff;
+  font: 13px var(--ssp-font);
+  text-decoration: none;
+  white-space: nowrap;
+  list-style: none;
+  cursor: pointer;
+}
+
+.ssp-action::-webkit-details-marker {
+  display: none;
+}
+
+.ssp-action:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+/* Menus */
+
+.ssp-menu {
+  position: relative;
+}
+
+.ssp-menu__list {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 12px);
+  right: 0;
+  width: min(28rem, calc(100vw - 32px));
+  max-height: 60vh;
+  overflow: auto;
+  margin: 0;
+  padding: 6px;
+  border: 1px solid var(--ssp-border-light);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ssp-navy);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 20%);
+  list-style: none;
+}
+
+.ssp-menu__list li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  padding: 8px;
+  border-radius: 4px;
+}
+
+.ssp-menu__list li:hover {
+  background: #f1f4f8;
+}
+
+.ssp-menu__list li.ssp-menu__empty {
+  display: block;
+  color: #5c6b7c;
+}
+
+.ssp-menu__list a {
+  color: var(--ssp-blue);
+  font-weight: 500;
+}
+
+.ssp-menu__details {
+  grid-column: 1;
+  color: #5c6b7c;
+  font-size: 12px;
+}
+
+.ssp-menu__actions {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  align-self: center;
+  display: flex;
+  gap: 6px;
+}
+
+.ssp-menu__actions button {
+  padding: 4px 10px;
+  border: 1px solid #a7bfdc;
+  border-radius: 4px;
+  background: #fff;
+  color: var(--ssp-blue);
+  cursor: pointer;
+}
+
+.ssp-menu__actions .ssp-menu__delete {
+  border-color: #d9a8ae;
+  color: #a51d2d;
+}
+
+/* Workspace: code | splitter | preview */
+
+.ssp-workspace {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.ssp-workspace__code {
+  width: 50%;
+  flex-shrink: 0;
+}
+
+.ssp-workspace__code[hidden] {
+  display: none;
+}
+
+.ssp-workspace__code[hidden] + .ssp-splitter {
+  display: none;
+}
+
+.ssp-workspace__preview {
+  flex: 1;
+}
+
+/* Room below the file tree for the Code switch. */
+.ssp-workspace .ssp-code__tree {
+  padding-bottom: 80px;
+}
+
+/* Shows or hides the code; it floats at the bottom left (over the end of the file tree). */
+.ssp-code-toggle {
+  position: absolute;
+  z-index: 3;
+  bottom: 20px;
+  left: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 41px;
+  padding: 0 18px 0 12px;
+  border: 0;
+  border-radius: 30px;
+  background: var(--ssp-navy);
+  color: #fff;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 25%);
+  cursor: pointer;
+}
+
+.ssp-code-toggle:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ssp-code-toggle__switch {
+  position: relative;
+  width: 32px;
+  height: 18px;
+  border-radius: 9px;
+  background: #5c6b7c;
+  transition: background 0.2s;
+}
+
+.ssp-code-toggle__switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.2s;
+}
+
+.ssp-code-toggle[aria-pressed="true"] .ssp-code-toggle__switch {
+  background: var(--ssp-teal);
+}
+
+.ssp-code-toggle[aria-pressed="true"] .ssp-code-toggle__switch::after {
+  transform: translateX(14px);
+}
+
+.ssp-fab {
+  position: absolute;
+  right: 20px;
+  bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 41px;
+  padding: 0 20px;
+  border-radius: 30px;
+  background: var(--ssp-teal);
+  color: var(--ssp-navy);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 20%);
+  text-decoration: none;
+}
+
+/* Narrow screens: code above the preview */
+
+@media (max-width: 900px) {
+  .ssp-toolbar {
+    padding: 10px 16px;
+  }
+
+  .ssp-status {
+    order: 10;
+    flex-basis: 100%;
+  }
+
+  .ssp-workspace {
+    flex-direction: column;
+    overflow: auto;
+  }
+
+  .ssp-workspace__code {
+    width: auto !important;
+    height: 55vh;
+    flex: none !important;
+    border-bottom: 1px solid var(--ssp-border);
+  }
+
+  .ssp-workspace .ssp-code__files {
+    width: 9rem;
+  }
+
+  .ssp-workspace .ssp-splitter {
+    display: none;
+  }
+
+  .ssp-code-toggle {
+    position: fixed;
+  }
+
+  .ssp-workspace__preview {
+    flex: none;
+    height: 80vh;
+  }
+
+  .ssp-preview__meta {
+    display: none;
+  }
+}

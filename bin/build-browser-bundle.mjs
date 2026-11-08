@@ -1,4 +1,4 @@
-// Packs the site from bin/build-site.mjs for the browser, into web/public/silverstripe/:
+// Packs the site from bin/build-site.mjs for the browser, into build/bundle/:
 //
 // - site.zip:      the project, unpacked into PHP's in-memory filesystem by the PHP worker. Without tests, docs and
 //                  source maps; public/_resources/ holds empty placeholders only: Silverstripe links a resource only
@@ -7,7 +7,7 @@
 //                  static files, without PHP.
 // - manifest.json: versions of the bundle.
 //
-// Usage: node bin/build-browser-bundle.mjs [--site=build/site] [--out=web/public/silverstripe]
+// Usage: node bin/build-browser-bundle.mjs [--site=build/site] [--out=build/bundle]
 
 import { execFileSync } from 'node:child_process';
 import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -18,7 +18,7 @@ const root = resolve(import.meta.dirname, '..');
 const { values } = parseArgs({
   options: {
     site: { type: 'string', default: 'build/site' },
-    out: { type: 'string', default: 'web/public/silverstripe' },
+    out: { type: 'string', default: 'build/bundle' },
   },
 });
 const site = resolve(root, values.site);

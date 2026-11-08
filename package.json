@@ -4,6 +4,22 @@
   "description": "Silverstripe CMS running in the browser via PHP-in-WebAssembly, comparable to WordPress Playground",
   "license": "GPL-2.0-or-later",
   "type": "module",
+  "exports": {
+    ".": "./engine/index.js",
+    "./app": "./engine/app.js",
+    "./code-editor": "./engine/code-editor.js",
+    "./preview": "./engine/preview.js",
+    "./splitter": "./engine/splitter.js",
+    "./sites-menu": "./engine/sites-menu.js",
+    "./storage": "./engine/storage.js",
+    "./vite": "./engine/vite.js",
+    "./ui.css": "./engine/ui.css",
+    "./app.css": "./engine/app.css",
+    "./icons/*": "./engine/icons/*"
+  },
+  "files": [
+    "engine"
+  ],
   "scripts": {
     "site": "node bin/build-site.mjs",
     "bundle": "node bin/build-browser-bundle.mjs",
@@ -12,15 +28,18 @@
     "web:build": "vite build --config web/vite.config.js",
     "web:preview": "vite preview --config web/vite.config.js --port 5411",
     "wasm:serve": "node wasm/serve.mjs",
-    "wasm:sake": "node wasm/sake.mjs"
+    "wasm:sake": "node wasm/sake.mjs",
+    "bundle:zip": "cd build/bundle && rm -f ../silverstripe-bundle.zip && zip -qr ../silverstripe-bundle.zip ."
   },
-  "devDependencies": {
+  "dependencies": {
     "@php-wasm/fs-journal": "^3.1.60",
-    "@php-wasm/node": "^3.1.60",
     "@php-wasm/universal": "^3.1.60",
     "@php-wasm/util": "^3.1.60",
     "@php-wasm/web": "^3.1.60",
-    "monaco-editor": "0.57.0",
+    "monaco-editor": "0.57.0"
+  },
+  "devDependencies": {
+    "@php-wasm/node": "^3.1.60",
     "vite": "^6.4.5"
   }
 }

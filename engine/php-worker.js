@@ -53,6 +53,55 @@ const channel = new BroadcastChannel('silverstripe-playground');
 let state = null;
 
 /**
+ * The cookies of the site's requests, like @php-wasm's HttpCookieStore, but it also forgets the cookies a response
+ * deletes (an expiry in the past, or Max-Age 0). Silverstripe deletes the session cookie when a session ends up
+ * empty (e.g. after ?flush=1), with "PHPSESSID=deleted"; sent again, that value is an invalid session ID (HTTP 500).
+ */
+class CookieStore {
+  cookies = new Map();
+
+  rememberCookiesFromResponseHeaders(headers) {
+    for (const header of headers?.['set-cookie'] ?? []) {
+      const [pair, ...attributes] = header.split(';');
+      const at = pair.indexOf('=');
+
+      if (at < 1) {
+        continue;
+      }
+
+      const name = pair.slice(0, at).trim();
+      const value = pair.slice(at + 1).trim();
+      const deleted = attributes.some((attribute) => {
+        const [key, setting = ''] = attribute.split('=').map((part) => part.trim());
+
+        return (
+          (key.toLowerCase() === 'max-age' && Number(setting) <= 0)
+          || (key.toLowerCase() === 'expires' && Date.parse(setting) <= Date.now())
+        );
+      });
+
+      if (deleted || value === '') {
+        this.cookies.delete(name);
+      } else {
+        this.cookies.set(name, value);
+      }
+    }
+  }
+
+  getCookieRequestHeader() {
+    return [...this.cookies].map(([name, value]) => `${name}=${value}`).join('; ');
+  }
+}
+
+/**
+ * A request of the worker itself (login, flush, dev/build), with the browser's User-Agent like the iframe's requests:
+ * Silverstripe ends a session whose User-Agent changes (Session.strict_user_agent_check), which logged the admin out.
+ */
+function ownRequest({ headers = {}, ...request }) {
+  return { ...request, headers: { 'user-agent': navigator.userAgent, ...headers } };
+}
+
+/**
  * Runs PHP requests one after the other. With a single PHP instance, @php-wasm rejects a request that arrives
  * while another one runs (SinglePHPInstanceManager), and the CMS fires several requests at once. Snapshots run in
  * this queue too, so no request changes files while one is taken.
@@ -83,8 +132,12 @@ self.onmessage = async ({ data }) => {
   }
 };
 
-function progress(message) {
-  self.postMessage({ type: 'progress', message });
+/**
+ * @param {string} message
+ * @param {number} [fraction] How far a start is, from 0 to 1 (for a progress bar)
+ */
+function progress(message, fraction) {
+  self.postMessage({ type: 'progress', message, fraction });
 }
 
 /**
@@ -111,7 +164,7 @@ async function boot({ base, scope, site = null, login = true }) {
     throw new Error(`There is no saved site "${site}" in this browser`);
   }
 
-  progress(`Loading PHP ${PHP_VERSION}`);
+  progress(`Loading PHP ${PHP_VERSION}`, 0.02);
   const caRoot = await generateCertificate({
     subject: { commonName: 'Silverstripe Playground CA', organizationName: 'Silverstripe Playground', countryName: 'DE' },
     basicConstraints: { ca: true },
@@ -134,7 +187,7 @@ async function boot({ base, scope, site = null, login = true }) {
   php.writeFile(PREPEND_FILE, prependCode({ SS_BASE_URL: siteUrl, SS_DEFAULT_ADMIN_PASSWORD: password }));
   await setPhpIniEntries(php, { auto_prepend_file: PREPEND_FILE });
 
-  progress(meta ? 'Opening the saved site' : 'Unpacking Silverstripe');
+  progress(meta ? 'Opening the saved site' : 'Unpacking Silverstripe', 0.8);
   php.mkdir(PROJECT_ROOT);
   php.writeFile('/tmp/site.zip', files.bytes);
   await runPhp(php, `
@@ -167,6 +220,7 @@ async function boot({ base, scope, site = null, login = true }) {
       absoluteUrl: siteUrl,
       // Silverstripe's .htaccess sends every path that is not a file to index.php.
       getFileNotFoundAction: () => ({ type: 'internal-redirect', uri: '/index.php' }),
+      cookieStore: new CookieStore(),
     });
 
   state = {
@@ -188,13 +242,13 @@ async function boot({ base, scope, site = null, login = true }) {
 
   // The caches come from the base, not from the snapshot: after changes to the code they must be built again.
   if ([...changes.paths].some((path) => EDITABLE.some((folder) => path === folder || path.startsWith(`${folder}/`)))) {
-    progress('Building the caches for the changed code');
-    await state.handler.request({ url: `${siteUrl}/?flush=1` });
+    progress('Building the caches for the changed code', 0.85);
+    await state.handler.request(ownRequest({ url: `${siteUrl}/?flush=1` }));
     lap('flush');
   }
 
   if (login) {
-    progress('Logging in');
+    progress('Logging in', 0.92);
     await logIn(state.handler, siteUrl, password);
     lap('login');
   }
@@ -587,7 +641,7 @@ async function deleteFile({ path }) {
 async function flushCaches() {
   running();
 
-  const response = await serialized(() => state.handler.request({ url: `${state.siteUrl}/?flush=1` }));
+  const response = await serialized(() => state.handler.request(ownRequest({ url: `${state.siteUrl}/?flush=1` })));
 
   scheduleSnapshot();
 
@@ -601,7 +655,7 @@ async function flushCaches() {
 async function devBuild() {
   running();
 
-  const response = await serialized(() => state.handler.request({ url: `${state.siteUrl}/dev/build?flush=1` }));
+  const response = await serialized(() => state.handler.request(ownRequest({ url: `${state.siteUrl}/dev/build?flush=1` })));
   const text = response.text
     .replace(/<(script|style)[\s\S]*?<\/\1>/gi, '')
     .replace(/<\/(li|p|div|h\d|tr)>|<br\s*\/?>/gi, '\n')
@@ -692,7 +746,7 @@ async function enableNetwork(php, caRoot) {
  * holds an admin session. The cookies stay in this worker: the browser never sees them.
  */
 async function logIn(handler, siteUrl, password) {
-  const form = await handler.request({ url: `${siteUrl}/Security/login` });
+  const form = await handler.request(ownRequest({ url: `${siteUrl}/Security/login` }));
   const token = form.text.match(/name="SecurityID" value="([^"]+)"/)?.[1];
 
   if (!token) {
@@ -709,14 +763,19 @@ async function logIn(handler, siteUrl, password) {
     // Where to go after logging in: the CMS. Without it, Silverstripe shows the login page again ("Welcome back"),
     // unless the project sets Security.default_login_dest.
     BackURL: `${new URL(siteUrl).pathname}/admin/`,
+    // "Remember me": the session ends after 24 minutes without requests (session.gc_maxlifetime); the remember-me
+    // cookie (kept in the cookie store) then logs the admin in again on the next request.
+    Remember: '1',
     action_doLogin: '1',
   });
-  const response = await handler.request({
-    url: `${siteUrl}/Security/login/default/LoginForm`,
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: new TextEncoder().encode(body.toString()),
-  });
+  const response = await handler.request(
+    ownRequest({
+      url: `${siteUrl}/Security/login/default/LoginForm`,
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new TextEncoder().encode(body.toString()),
+    })
+  );
 
   if (response.httpStatusCode !== 302 || /Security\/login/.test(response.headers.location?.[0] ?? '')) {
     throw new Error(`Logging in failed (HTTP ${response.httpStatusCode})`);
@@ -740,7 +799,7 @@ async function sha256(bytes) {
 }
 
 async function download(url) {
-  progress('Downloading Silverstripe');
+  progress('Downloading Silverstripe', 0.05);
 
   const response = await fetch(url);
 
@@ -764,7 +823,10 @@ async function download(url) {
     received += value.length;
 
     if (total) {
-      progress(`Downloading Silverstripe: ${Math.round((received / total) * 100)}% of ${(total / 1048576).toFixed(1)} MB`);
+      progress(
+        `Downloading Silverstripe: ${Math.round((received / total) * 100)}% of ${(total / 1048576).toFixed(1)} MB`,
+        0.05 + 0.7 * (received / total)
+      );
     }
   }
 

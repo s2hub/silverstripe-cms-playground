@@ -2,13 +2,16 @@ name: Deploy the playground
 
 # Publishes web/dist to GitHub Pages on every push to main, or by hand. Pages must be enabled with
 # "GitHub Actions" as source (Settings > Pages) before this workflow can deploy.
+#
+# It also publishes the site bundle (site.zip, manifest.json, _resources/) as the asset silverstripe-bundle.zip of the
+# release "bundle", for other sites that use the engine (e.g. Explore Silverstripe).
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -37,8 +40,17 @@ jobs:
 
       - run: npm ci --no-audit --no-fund
 
-      # build/site from demo.silverstripe.org, the browser bundle and the web app.
+      # build/site from the site repository, the browser bundle and the web app.
       - run: npm run build
+
+      - name: Publish the site bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          npm run bundle:zip
+          gh release view bundle >/dev/null 2>&1 \
+            || gh release create bundle --title "Site bundle" --notes "The site bundle of the latest build of main, for sites that use the engine." --latest=false
+          gh release upload bundle build/silverstripe-bundle.zip --clobber
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
