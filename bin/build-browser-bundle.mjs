@@ -23,7 +23,7 @@ const { values } = parseArgs({
 });
 const site = resolve(root, values.site);
 const out = resolve(root, values.out);
-const stage = resolve(root, 'build/bundle');
+const stage = resolve(root, 'build/bundle-stage');
 
 /** Paths (relative to the project) left out of site.zip. */
 const SKIP = [
